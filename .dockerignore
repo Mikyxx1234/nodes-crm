@@ -1,0 +1,13 @@
+# Reconstruído dentro do build (npm ci + npm run build). Não enviar para o
+# contexto para evitar artefatos obsoletos e acelerar o build.
+node_modules
+dist
+*.tgz
+
+# Metadados / dev
+.git
+.gitignore
+*.log
+.DS_Store
+.env
+.env.*

@@ -1,0 +1,8 @@
+.git
+.gitignore
+tsconfig.json
+nodes/**/*.ts
+credentials/**/*.ts
+scripts/
+*.map
+TESTING.md

@@ -1,0 +1,43 @@
+{
+  "name": "n8n-nodes-eduit-crm",
+  "version": "0.1.0",
+  "description": "Node privado do n8n para operar o Eduit CRM (contatos, deals, deal+contato e busca) via API com campos amigáveis.",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "eduit",
+    "crm"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "author": {
+    "name": "Eduit"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && node scripts/copy-icons.js",
+    "dev": "tsc --watch",
+    "clean": "node scripts/clean.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/EduitCrmApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/EduitCrm/EduitCrm.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "n8n-workflow": "*",
+    "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}
