@@ -1,6 +1,6 @@
 import type { INodeProperties } from 'n8n-workflow';
 
-import { DEAL_STATUS_OPTIONS, stageSelector } from './common';
+import { customFieldsCollection, DEAL_STATUS_OPTIONS, stageSelector } from './common';
 
 export const dealOperations: INodeProperties[] = [
 	{
@@ -94,6 +94,7 @@ export const dealFields: INodeProperties[] = [
 			{ displayName: 'Lost Reason', name: 'lostReason', type: 'string', default: '' },
 		],
 	},
+	customFieldsCollection('customFieldsUi', 'deal', 'deal', ['create']),
 
 	// ── Update ──
 	{
@@ -114,6 +115,7 @@ export const dealFields: INodeProperties[] = [
 			{ displayName: 'Lost Reason', name: 'lostReason', type: 'string', default: '' },
 		],
 	},
+	customFieldsCollection('customFieldsUi', 'deal', 'deal', ['update']),
 
 	// ── Search (filtros adicionais; pipeline/stage vêm do bloco acima) ──
 	{

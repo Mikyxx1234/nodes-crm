@@ -43,6 +43,16 @@ Testes manuais reais contra um ambiente do CRM. **Use primeiro um ambiente de DE
 - Execute.
 - **Esperado:** só o campo enviado muda; os demais (título, contato, etc.) permanecem. Teste também `Value = 0` → deve gravar `0` (não ser ignorado).
 
+## 4b. Custom fields (campos personalizados)
+
+- **Contact → Create**: preencha `Name` e, no bloco **Custom Fields**, escolha um campo no dropdown e informe um valor. Execute.
+  - **Esperado:** contato criado e, no CRM, o campo personalizado com o valor. A resposta traz `customFields` com os valores atuais.
+- **Deal → Update**: informe `Deal ID` e só um **Custom Field** (sem campos core). Execute.
+  - **Esperado:** o custom field é gravado mesmo sem alterar campos padrão (update só de custom field é permitido).
+- **Deal + Contact → Create Deal With Contact**: preencha **Contact Custom Fields** e **Deal Custom Fields**. Execute.
+  - **Esperado:** contato + deal criados com os custom fields preenchidos.
+- **Dropdown vazio?** Confirme que o backend com o ajuste de `GET /api/custom-fields` (Bearer) foi deployado e que o usuário do token tem visualização (`deal:view` para campos de negócio).
+
 ## 5. Token inválido
 
 - Edite a credencial e troque o `API Token` por um valor inválido (ex.: `eduit_invalido`).

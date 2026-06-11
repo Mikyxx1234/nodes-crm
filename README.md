@@ -112,6 +112,23 @@ docker run -it --rm -p 5678:5678 \
 - **Status** e **Lifecycle Stage** são listas fixas com os valores reais do backend (`OPEN/WON/LOST` e `SUBSCRIBER/LEAD/MQL/SQL/OPPORTUNITY/CUSTOMER/EVANGELIST/OTHER`).
 - **Owner ID / Assigned To ID / Contact ID / Company ID** são campos de texto (ID).
 
+## Campos personalizados (Custom Fields)
+
+O node suporta campos personalizados (custom fields) da organização em:
+
+- **Contact > Create / Update** — bloco **Custom Fields**.
+- **Deal > Create / Update** — bloco **Custom Fields**.
+- **Deal + Contact > Create Deal With Contact** — blocos **Contact Custom Fields** e **Deal Custom Fields**.
+
+Cada entrada tem um **dropdown com a lista de campos** (carregada de `GET /api/custom-fields`) e um **Value**. Em `Create`, o node primeiro cria o registro e depois grava os custom fields; em `Update`, grava direto. No `Create Deal With Contact`, os valores vão inline no `POST /api/leads`.
+
+Endpoints usados:
+
+- `GET /api/custom-fields?entity=contact|deal` — lista as definições para o dropdown (aceita Bearer).
+- `PUT /api/contacts/:id/custom-fields` e `PUT /api/deals/:id/custom-fields` — gravam os valores (`{ values: [{ fieldId, value }] }`).
+
+> O dropdown depende do backend com o ajuste que faz `GET /api/custom-fields` aceitar Bearer token. Se o seu backend ainda não tem esse ajuste, o dropdown fica vazio (faça o deploy do backend atualizado).
+
 ## Limitações conhecidas / pendências
 
 - **Owner (responsável) por dropdown:** indisponível nesta versão porque `GET /api/users` só aceita sessão NextAuth (não aceita token Bearer). Use o **Owner ID** manual. Quando existir um endpoint de usuários compatível com token, um dropdown será adicionado.

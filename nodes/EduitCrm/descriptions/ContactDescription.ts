@@ -1,6 +1,6 @@
 import type { INodeProperties } from 'n8n-workflow';
 
-import { LIFECYCLE_STAGE_OPTIONS } from './common';
+import { customFieldsCollection, LIFECYCLE_STAGE_OPTIONS } from './common';
 
 export const contactOperations: INodeProperties[] = [
 	{
@@ -94,6 +94,7 @@ export const contactFields: INodeProperties[] = [
 		displayOptions: { show: { resource: ['contact'], operation: ['create'] } },
 		options: contactCommonFields,
 	},
+	customFieldsCollection('customFieldsUi', 'contact', 'contact', ['create']),
 
 	// ── Update ──
 	{
@@ -117,4 +118,5 @@ export const contactFields: INodeProperties[] = [
 			...contactCommonFields,
 		],
 	},
+	customFieldsCollection('customFieldsUi', 'contact', 'contact', ['update']),
 ];

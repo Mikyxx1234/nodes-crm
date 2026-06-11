@@ -83,6 +83,63 @@ export async function getStages(this: ILoadOptionsFunctions): Promise<INodePrope
 	return stages.map((s) => ({ name: s.name, value: s.id }));
 }
 
+type RawCustomField = { id: string; name: string; label?: string };
+
+async function loadCustomFieldOptions(
+	ctx: ILoadOptionsFunctions,
+	entity: 'contact' | 'deal',
+): Promise<INodePropertyOptions[]> {
+	const response = (await eduitApiRequest.call(
+		ctx,
+		'GET',
+		'/api/custom-fields',
+		{},
+		{ entity },
+	)) as RawCustomField[] | { items?: RawCustomField[] };
+	const fields = Array.isArray(response) ? response : response.items ?? [];
+	return fields.map((f) => ({
+		name: f.label && f.label.trim() ? `${f.label} (${f.name})` : f.name,
+		value: f.id,
+	}));
+}
+
+/** Campos personalizados de Contato (GET /api/custom-fields?entity=contact). */
+export async function getContactCustomFields(
+	this: ILoadOptionsFunctions,
+): Promise<INodePropertyOptions[]> {
+	return loadCustomFieldOptions(this, 'contact');
+}
+
+/** Campos personalizados de Negócio (GET /api/custom-fields?entity=deal). */
+export async function getDealCustomFields(
+	this: ILoadOptionsFunctions,
+): Promise<INodePropertyOptions[]> {
+	return loadCustomFieldOptions(this, 'deal');
+}
+
+/**
+ * Lê uma fixedCollection de custom fields (`{ field: [{ fieldId, value }] }`)
+ * e devolve `[{ fieldId, value }]` pronto para os endpoints de valores.
+ * Mantém value como string (inclusive vazia, que limpa o campo no CRM) e
+ * descarta entradas sem fieldId.
+ */
+export function readCustomFields(
+	ctx: IExecuteFunctions,
+	paramName: string,
+	itemIndex: number,
+): Array<{ fieldId: string; value: string }> {
+	const coll = ctx.getNodeParameter(paramName, itemIndex, {}) as IDataObject;
+	const rows = (coll.field as IDataObject[] | undefined) ?? [];
+	const out: Array<{ fieldId: string; value: string }> = [];
+	for (const row of rows) {
+		const fieldId = row && row.fieldId ? String(row.fieldId).trim() : '';
+		if (!fieldId) continue;
+		const value = row.value === undefined || row.value === null ? '' : String(row.value);
+		out.push({ fieldId, value });
+	}
+	return out;
+}
+
 /**
  * Monta um objeto somente com os campos realmente preenchidos.
  *

@@ -1,6 +1,11 @@
 import type { INodeProperties } from 'n8n-workflow';
 
-import { DEAL_STATUS_OPTIONS, LIFECYCLE_STAGE_OPTIONS, stageSelector } from './common';
+import {
+	customFieldsCollection,
+	DEAL_STATUS_OPTIONS,
+	LIFECYCLE_STAGE_OPTIONS,
+	stageSelector,
+} from './common';
 
 export const dealContactOperations: INodeProperties[] = [
 	{
@@ -70,6 +75,13 @@ export const dealContactFields: INodeProperties[] = [
 			{ displayName: 'Avatar URL', name: 'avatarUrl', type: 'string', default: '' },
 		],
 	},
+	customFieldsCollection(
+		'contactCustomFieldsUi',
+		'contact',
+		'dealContact',
+		['createWithContact'],
+		'Contact Custom Fields',
+	),
 
 	// ── Negócio ──
 	...stageSelector('dealContact', ['createWithContact'], {
@@ -98,4 +110,11 @@ export const dealContactFields: INodeProperties[] = [
 			{ displayName: 'Position', name: 'position', type: 'number', typeOptions: { minValue: 0 }, default: 0 },
 		],
 	},
+	customFieldsCollection(
+		'dealCustomFieldsUi',
+		'deal',
+		'dealContact',
+		['createWithContact'],
+		'Deal Custom Fields',
+	),
 ];

@@ -11,9 +11,12 @@ import { NodeOperationError } from 'n8n-workflow';
 
 import {
 	eduitApiRequest,
+	getContactCustomFields,
+	getDealCustomFields,
 	getPipelines,
 	getStages,
 	pruneEmpty,
+	readCustomFields,
 	resolveStageId,
 } from './GenericFunctions';
 import {
@@ -72,6 +75,12 @@ export class EduitCrm implements INodeType {
 			},
 			getStages(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getStages.call(this);
+			},
+			getContactCustomFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getContactCustomFields.call(this);
+			},
+			getDealCustomFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getDealCustomFields.call(this);
 			},
 		},
 	};
@@ -139,7 +148,23 @@ async function handleContact(
 		const name = this.getNodeParameter('name', i) as string;
 		const additional = this.getNodeParameter('additionalFields', i, {}) as IDataObject;
 		const body = pruneEmpty({ name, ...additional });
-		return (await eduitApiRequest.call(this, 'POST', '/api/contacts', body)) as IDataObject;
+		const created = (await eduitApiRequest.call(
+			this,
+			'POST',
+			'/api/contacts',
+			body,
+		)) as IDataObject;
+
+		const customFields = readCustomFields(this, 'customFieldsUi', i);
+		if (customFields.length > 0 && created.id) {
+			created.customFields = await eduitApiRequest.call(
+				this,
+				'PUT',
+				`/api/contacts/${encodeURIComponent(String(created.id))}/custom-fields`,
+				{ values: customFields },
+			);
+		}
+		return created;
 	}
 
 	if (operation === 'update') {
@@ -149,17 +174,32 @@ async function handleContact(
 		}
 		const updateFields = this.getNodeParameter('updateFields', i, {}) as IDataObject;
 		const body = pruneEmpty(updateFields);
-		if (Object.keys(body).length === 0) {
+		const customFields = readCustomFields(this, 'customFieldsUi', i);
+
+		if (Object.keys(body).length === 0 && customFields.length === 0) {
 			throw new NodeOperationError(this.getNode(), 'Informe ao menos um campo para atualizar.', {
 				itemIndex: i,
 			});
 		}
-		return (await eduitApiRequest.call(
-			this,
-			'PUT',
-			`/api/contacts/${encodeURIComponent(contactId)}`,
-			body,
-		)) as IDataObject;
+
+		let result: IDataObject = {};
+		if (Object.keys(body).length > 0) {
+			result = (await eduitApiRequest.call(
+				this,
+				'PUT',
+				`/api/contacts/${encodeURIComponent(contactId)}`,
+				body,
+			)) as IDataObject;
+		}
+		if (customFields.length > 0) {
+			result.customFields = await eduitApiRequest.call(
+				this,
+				'PUT',
+				`/api/contacts/${encodeURIComponent(contactId)}/custom-fields`,
+				{ values: customFields },
+			);
+		}
+		return result;
 	}
 
 	throw new NodeOperationError(this.getNode(), `Operação de contato não suportada: ${operation}`);
@@ -189,7 +229,18 @@ async function handleDeal(
 		}
 		const additional = this.getNodeParameter('additionalFields', i, {}) as IDataObject;
 		const body = pruneEmpty({ title, stageId, ...additional });
-		return (await eduitApiRequest.call(this, 'POST', '/api/deals', body)) as IDataObject;
+		const created = (await eduitApiRequest.call(this, 'POST', '/api/deals', body)) as IDataObject;
+
+		const customFields = readCustomFields(this, 'customFieldsUi', i);
+		if (customFields.length > 0 && created.id) {
+			created.customFields = await eduitApiRequest.call(
+				this,
+				'PUT',
+				`/api/deals/${encodeURIComponent(String(created.id))}/custom-fields`,
+				{ values: customFields },
+			);
+		}
+		return created;
 	}
 
 	if (operation === 'update') {
@@ -199,17 +250,32 @@ async function handleDeal(
 		}
 		const updateFields = this.getNodeParameter('updateFields', i, {}) as IDataObject;
 		const body = pruneEmpty(updateFields);
-		if (Object.keys(body).length === 0) {
+		const customFields = readCustomFields(this, 'customFieldsUi', i);
+
+		if (Object.keys(body).length === 0 && customFields.length === 0) {
 			throw new NodeOperationError(this.getNode(), 'Informe ao menos um campo para atualizar.', {
 				itemIndex: i,
 			});
 		}
-		return (await eduitApiRequest.call(
-			this,
-			'PUT',
-			`/api/deals/${encodeURIComponent(dealId)}`,
-			body,
-		)) as IDataObject;
+
+		let result: IDataObject = {};
+		if (Object.keys(body).length > 0) {
+			result = (await eduitApiRequest.call(
+				this,
+				'PUT',
+				`/api/deals/${encodeURIComponent(dealId)}`,
+				body,
+			)) as IDataObject;
+		}
+		if (customFields.length > 0) {
+			result.customFields = await eduitApiRequest.call(
+				this,
+				'PUT',
+				`/api/deals/${encodeURIComponent(dealId)}/custom-fields`,
+				{ values: customFields },
+			);
+		}
+		return result;
 	}
 
 	if (operation === 'moveStage') {
@@ -276,6 +342,13 @@ async function handleDealContact(
 	const dealTitle = this.getNodeParameter('dealTitle', i, '') as string;
 	const dealExtra = this.getNodeParameter('dealExtra', i, {}) as IDataObject;
 	const deal = pruneEmpty({ stageId, title: dealTitle, ...dealExtra });
+
+	// Custom fields vão inline no /api/leads (resolve por fieldId). O backend
+	// aceita [{ fieldId, value }] tanto no bloco contact quanto no deal.
+	const contactCf = readCustomFields(this, 'contactCustomFieldsUi', i);
+	if (contactCf.length > 0) contact.customFields = contactCf;
+	const dealCf = readCustomFields(this, 'dealCustomFieldsUi', i);
+	if (dealCf.length > 0) deal.customFields = dealCf;
 
 	const body: IDataObject = { contact, deal };
 	// Resposta real do backend: { contact, contactCreated, deal, dealCreated, missingCustomFields? }

@@ -89,3 +89,57 @@ export function stageSelector(
 
 	return [pipeline, stageSource, stageList, stageManual];
 }
+
+/**
+ * Coleção de campos personalizados (custom fields). Cada entrada tem o campo
+ * (dropdown carregado da org) e o valor. Os valores são gravados via os
+ * endpoints dedicados (`PUT /api/{contacts|deals}/:id/custom-fields`) ou
+ * inline no `POST /api/leads`.
+ *
+ * @param name        nome do parâmetro (único por contexto, ex.: customFieldsUi)
+ * @param entity      'contact' | 'deal' (define qual loadOptions usar)
+ * @param resource    resource do node
+ * @param operation   operações onde a coleção aparece
+ * @param displayName rótulo exibido
+ */
+export function customFieldsCollection(
+	name: string,
+	entity: 'contact' | 'deal',
+	resource: string,
+	operation: string[],
+	displayName = 'Custom Fields',
+): INodeProperties {
+	const loadOptionsMethod = entity === 'deal' ? 'getDealCustomFields' : 'getContactCustomFields';
+	return {
+		displayName,
+		name,
+		type: 'fixedCollection',
+		typeOptions: { multipleValues: true },
+		placeholder: 'Add Custom Field',
+		default: {},
+		displayOptions: { show: { resource: [resource], operation } },
+		options: [
+			{
+				displayName: 'Field',
+				name: 'field',
+				values: [
+					{
+						displayName: 'Field Name or ID',
+						name: 'fieldId',
+						type: 'options',
+						typeOptions: { loadOptionsMethod },
+						default: '',
+						description:
+							'Campo personalizado da organização. Carregado de GET /api/custom-fields.',
+					},
+					{
+						displayName: 'Value',
+						name: 'value',
+						type: 'string',
+						default: '',
+					},
+				],
+			},
+		],
+	};
+}
