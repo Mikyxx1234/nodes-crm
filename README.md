@@ -7,7 +7,7 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
 - **Deal + Contact**
   - `Create Deal With Contact` (prioridade) — acha o contato (ID → telefone → e-mail) ou cria, e cria o negócio já vinculado. Usa `POST /api/leads` (atômico e idempotente por telefone/e-mail).
 - **Contact**
-  - `Search` — `GET /api/contacts` (termo, e-mail exato, telefone exato, lifecycle).
+  - `Search` — `GET /api/contacts` (termo, e-mail exato, telefone exato, lifecycle, **Ad Source ID Meta CTWA**). Toggle `Include Deals` enriquece cada contato com `deals: [...]` (chamada extra `GET /api/deals?contactId=...`).
   - `Create` — `POST /api/contacts`.
   - `Update` — `PUT /api/contacts/:id`.
 - **Deal**
@@ -15,8 +15,10 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
   - `Create` — `POST /api/deals`.
   - `Update` — `PUT /api/deals/:id`.
   - `Move Stage` — `PUT /api/deals/:id` com `stageId` (não usa `/api/deals/:id/move`, que depende de sessão).
+- **Note**
+  - `Create on Deal` — `POST /api/deals/:id/notes`. Cria uma nota vinculada ao negócio; a mesma nota aparece **tanto na aba "Notas" do deal em `/pipeline` quanto na timeline do `/inbox`** (como nota interna) se o contato do deal tiver conversa vigente. Requer o ajuste do backend que fez esta rota aceitar Bearer token e espelhar a nota como `Message` privada.
 - **Search**
-  - `Search Full Record` — busca contatos e os negócios de cada um; retorna todos os resultados + `mainContact`/`mainDeal`.
+  - `Search Full Record` — busca contatos e os negócios de cada um; retorna todos os resultados + `mainContact`/`mainDeal`. Aceita `Search By`: General Term, Email, Phone ou **Ad Source ID (Meta CTWA)**.
 
 ## Credencial: `Eduit CRM API`
 
@@ -133,6 +135,7 @@ Endpoints usados:
 
 - **Owner (responsável) por dropdown:** indisponível nesta versão porque `GET /api/users` só aceita sessão NextAuth (não aceita token Bearer). Use o **Owner ID** manual. Quando existir um endpoint de usuários compatível com token, um dropdown será adicionado.
 - **WhatsApp (resource `Message`):** fora do v1. Não há endpoint Bearer amigável por telefone/contato (o envio por token existe só em `POST /api/conversations/:id/messages`, que exige `conversationId`; e `POST /api/conversations/create` depende de sessão). Pendente até um endpoint auxiliar ser criado no backend.
+- **`Note > Create on Deal`** só espelha a nota como `Message` no `/inbox` se o contato do deal tiver **alguma conversa vigente** (mais recente por `updatedAt`). Se o contato nunca teve conversa, a nota aparece só na aba "Notas" do deal em `/pipeline` (comportamento igual ao painel manual do deal).
 
 ## Atualização em Update (preservação de campos)
 

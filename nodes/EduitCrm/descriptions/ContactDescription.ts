@@ -64,11 +64,27 @@ export const contactFields: INodeProperties[] = [
 			{ displayName: 'Email (Exact)', name: 'email', type: 'string', default: '', description: 'Match exato por e-mail (ideal para "existe?")' },
 			{ displayName: 'Phone (Exact)', name: 'phone', type: 'string', default: '', description: 'Match exato por telefone (casa pelos dígitos)' },
 			{
+				displayName: 'Ad Source ID (Meta CTWA)',
+				name: 'adSourceId',
+				type: 'string',
+				default: '',
+				description:
+					'Match exato pelo id do post/anúncio Meta que originou o contato (Contact.adSourceId, gravado pelo webhook Meta em referral.source_id). Útil para enumerar leads de um anúncio específico.',
+			},
+			{
 				displayName: 'Lifecycle Stage',
 				name: 'lifecycleStage',
 				type: 'options',
 				options: LIFECYCLE_STAGE_OPTIONS,
 				default: '',
+			},
+			{
+				displayName: 'Include Deals',
+				name: 'includeDeals',
+				type: 'boolean',
+				default: false,
+				description:
+					'Whether to also fetch the deals linked to each contact returned. Faz uma chamada extra a GET /api/deals?contactId=... por contato.',
 			},
 			{ displayName: 'Limit', name: 'perPage', type: 'number', typeOptions: { minValue: 1 }, default: 20, description: 'Máximo de resultados por página' },
 			{ displayName: 'Page', name: 'page', type: 'number', typeOptions: { minValue: 1 }, default: 1 },

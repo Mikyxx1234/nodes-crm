@@ -26,6 +26,8 @@ import {
 	dealContactOperations,
 	dealFields,
 	dealOperations,
+	noteFields,
+	noteOperations,
 	searchFields,
 	searchOperations,
 } from './descriptions';
@@ -53,6 +55,7 @@ export class EduitCrm implements INodeType {
 					{ name: 'Deal + Contact', value: 'dealContact' },
 					{ name: 'Contact', value: 'contact' },
 					{ name: 'Deal', value: 'deal' },
+					{ name: 'Note', value: 'note' },
 					{ name: 'Search', value: 'search' },
 				],
 				default: 'dealContact',
@@ -63,6 +66,8 @@ export class EduitCrm implements INodeType {
 			...contactFields,
 			...dealOperations,
 			...dealFields,
+			...noteOperations,
+			...noteFields,
 			...searchOperations,
 			...searchFields,
 		],
@@ -102,6 +107,8 @@ export class EduitCrm implements INodeType {
 					result = await handleDeal.call(this, operation, i);
 				} else if (resource === 'dealContact') {
 					result = await handleDealContact.call(this, operation, i);
+				} else if (resource === 'note') {
+					result = await handleNote.call(this, operation, i);
 				} else if (resource === 'search') {
 					result = await handleSearch.call(this, operation, i);
 				} else {
@@ -139,9 +146,38 @@ async function handleContact(
 ): Promise<IDataObject | IDataObject[]> {
 	if (operation === 'search') {
 		const filters = this.getNodeParameter('filters', i, {}) as IDataObject;
-		const qs = pruneEmpty(filters);
+		// `includeDeals` é sinalizador do node — não é filtro do backend.
+		// Removido do qs para não virar querystring sem efeito (e não
+		// confundir logs de acesso na API).
+		const includeDeals = filters.includeDeals === true;
+		const qs = pruneEmpty({ ...filters, includeDeals: undefined });
 		const res = (await eduitApiRequest.call(this, 'GET', '/api/contacts', {}, qs)) as IDataObject;
-		return (res.items as IDataObject[]) ?? [res];
+		const contacts = (res.items as IDataObject[]) ?? [];
+
+		if (!includeDeals) return contacts.length > 0 ? contacts : [res];
+
+		// Enriquecimento opcional: para cada contato, busca os deals
+		// vinculados via GET /api/deals?contactId=... (mesmo padrão do
+		// Search > Search Full Record). Serial para preservar o rate
+		// limit da API — a lista de retorno costuma ser pequena (perPage
+		// padrão 20). Se precisar mais throughput no futuro, dá para
+		// paralelizar com Promise.all.
+		const enriched: IDataObject[] = [];
+		for (const contact of contacts) {
+			let deals: IDataObject[] = [];
+			if (contact.id) {
+				const dealsRes = (await eduitApiRequest.call(
+					this,
+					'GET',
+					'/api/deals',
+					{},
+					{ contactId: contact.id as string, perPage: 100 },
+				)) as IDataObject;
+				deals = ((dealsRes.items as IDataObject[]) ?? []) as IDataObject[];
+			}
+			enriched.push({ ...contact, deals });
+		}
+		return enriched;
 	}
 
 	if (operation === 'create') {
@@ -355,6 +391,36 @@ async function handleDealContact(
 	return (await eduitApiRequest.call(this, 'POST', '/api/leads', body)) as IDataObject;
 }
 
+async function handleNote(
+	this: IExecuteFunctions,
+	operation: string,
+	i: number,
+): Promise<IDataObject> {
+	if (operation !== 'createOnDeal') {
+		throw new NodeOperationError(this.getNode(), `Operação de nota não suportada: ${operation}`);
+	}
+
+	const dealId = (this.getNodeParameter('dealId', i) as string).trim();
+	if (!dealId) {
+		throw new NodeOperationError(this.getNode(), 'Deal ID é obrigatório.', { itemIndex: i });
+	}
+	const content = (this.getNodeParameter('content', i) as string).trim();
+	if (!content) {
+		throw new NodeOperationError(this.getNode(), 'Conteúdo da nota é obrigatório.', { itemIndex: i });
+	}
+
+	// POST /api/deals/:id/notes — após o ajuste 30/jul/26 no backend, cria
+	// o `Note` (aparece em /pipeline) e, se o contato do deal tem conversa
+	// vigente, cria também uma `Message` messageType=note isPrivate=true
+	// (aparece em /inbox). Escopo por org é garantido pelo Bearer token.
+	return (await eduitApiRequest.call(
+		this,
+		'POST',
+		`/api/deals/${encodeURIComponent(dealId)}/notes`,
+		{ content },
+	)) as IDataObject;
+}
+
 async function handleSearch(
 	this: IExecuteFunctions,
 	operation: string,
@@ -377,6 +443,7 @@ async function handleSearch(
 	const qs: IDataObject = { perPage };
 	if (searchBy === 'email') qs.email = value;
 	else if (searchBy === 'phone') qs.phone = value;
+	else if (searchBy === 'adSourceId') qs.adSourceId = value;
 	else qs.search = value;
 
 	const contactsRes = (await eduitApiRequest.call(

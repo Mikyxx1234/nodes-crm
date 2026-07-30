@@ -33,6 +33,12 @@ export const searchFields: INodeProperties[] = [
 			{ name: 'General Term', value: 'term', description: 'Busca textual ampla (nome, e-mail, telefone...)' },
 			{ name: 'Email (Exact)', value: 'email' },
 			{ name: 'Phone (Exact)', value: 'phone' },
+			{
+				name: 'Ad Source ID (Meta CTWA)',
+				value: 'adSourceId',
+				description:
+					'Contatos originados de um post/anúncio Meta específico (Contact.adSourceId — id retornado pelo webhook Meta em referral.source_id)',
+			},
 		],
 	},
 	{
