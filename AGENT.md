@@ -4,6 +4,37 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-04 - Message: envio WhatsApp com botões interativos (reply buttons)
+
+**Decisão**
+
+Nova operation `Send WhatsApp with Buttons (Interactive)` no resource `Message`. Body/header/footer/buttons aceitam expressões n8n (texto variável vindo do workflow). Meta Cloud API é o único destino — Baileys/Messenger/Instagram são rejeitados no service.
+
+Bate no mesmo `POST /api/deals/:id/messages` com `kind: "interactive"`, novo shape no body:
+
+```json
+{ "kind": "interactive", "body": "...", "buttons": [{"id":"opt_yes","title":"Sim"}], "header":"...", "footer":"..." }
+```
+
+**Contexto**
+
+O uso deste tipo de mensagem hoje só existia dentro do `automation-executor` (step `send_whatsapp_interactive`). n8n é o canal natural para orquestrar botões dinâmicos vindos de sistemas externos (ex.: qualificar lead com "Sim/Não/Falar com atendente" após um webhook). Sem esta operation, o operador precisava criar uma automação inteira só para expor o botão.
+
+**Alternativas descartadas**
+
+- **List messages, CTA URL, media header.** Fora do escopo pedido pelo usuário ("Pode fazer isso e mais nada?"). Cobrir só reply buttons — o formato mais comum.
+- **Node autônomo `WhatsApp Interactive`.** Manter dentro de `Message` mantém a UX consistente com `sendText/sendTemplate` (mesmo `Deal ID`, mesmo bloco `Options`).
+- **Aceitar 4+ botões e o servidor cortar em 3.** Rejeitar com 400 no service é mais claro que enviar mensagem incompleta silenciosamente. O n8n também valida antes do HTTP.
+
+**Impacto**
+
+- Backend: 2 arquivos (`src/services/outbound-messaging.ts` +200 LOC com `sendInteractiveButtonsToConversation`; `src/app/api/deals/[id]/messages/route.ts` +40 LOC com o branch `interactive` e o parser `parseButtons`).
+- Nodes: 2 arquivos (`MessageDescription.ts` +65 LOC com a operation nova e seus campos; `EduitCrm.node.ts` +50 LOC com o handler).
+- Formato do `content` gravado na `Message` (`"body\n[Botões: t1, t2, t3]"`) é idêntico ao já usado por `automation-executor` — timeline unificada.
+- Isolamento por org: mantido via `authenticateApiRequest` + `runWithApiUserContext` já existentes na rota.
+
+---
+
 ### 2026-08-03 - Resource `Message`: envio pelo deal com template, modelo interno e flow
 
 **Decisão**

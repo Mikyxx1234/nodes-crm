@@ -510,6 +510,65 @@ async function handleMessage(
 		return (await eduitApiRequest.call(this, 'POST', endpoint, body)) as IDataObject;
 	}
 
+	if (operation === 'sendInteractive') {
+		const body = (this.getNodeParameter('interactiveBody', i, '') as string).trim();
+		if (!body) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'O texto do body é obrigatório para mensagem interativa.',
+				{ itemIndex: i },
+			);
+		}
+
+		// `interactiveButtonsUi` é uma fixedCollection: `{ button: [{ title, id? }] }`.
+		// Extraímos, trimamos e descartamos linhas sem title (usuário adicionou
+		// linha vazia por acidente). O backend também valida — este check aqui
+		// dá erro antes da chamada HTTP para preservar itens no n8n.
+		const buttonsColl = this.getNodeParameter(
+			'interactiveButtonsUi',
+			i,
+			{},
+		) as IDataObject;
+		const buttonRows = (buttonsColl.button as IDataObject[] | undefined) ?? [];
+		const buttons = buttonRows
+			.map((row) => {
+				const title = row && typeof row.title === 'string' ? row.title.trim() : '';
+				const id = row && typeof row.id === 'string' ? row.id.trim() : '';
+				return { title, ...(id ? { id } : {}) };
+			})
+			.filter((b) => b.title.length > 0);
+
+		if (buttons.length === 0) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'Informe ao menos 1 botão (com Title preenchido).',
+				{ itemIndex: i },
+			);
+		}
+		if (buttons.length > 3) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'Máximo de 3 botões por mensagem (limite Meta).',
+				{ itemIndex: i },
+			);
+		}
+
+		const header = (this.getNodeParameter('interactiveHeader', i, '') as string).trim();
+		const footer = (this.getNodeParameter('interactiveFooter', i, '') as string).trim();
+
+		const requestBody: IDataObject = {
+			kind: 'interactive',
+			body,
+			buttons,
+		};
+		if (header) requestBody.header = header;
+		if (footer) requestBody.footer = footer;
+		if (options.channelId) requestBody.channelId = String(options.channelId).trim();
+		if (options.keepAutomations === true) requestBody.stopAutomations = false;
+
+		return (await eduitApiRequest.call(this, 'POST', endpoint, requestBody)) as IDataObject;
+	}
+
 	if (operation === 'sendTemplate') {
 		const templateName = (this.getNodeParameter('templateName', i, '') as string).trim();
 		if (!templateName) {

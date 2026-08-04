@@ -19,6 +19,7 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
   - `Send Internal Note` — nota interna: aparece na timeline do `/inbox` e na aba "Notas" do deal. O cliente não recebe nada.
   - `Send WhatsApp Message` — texto livre pelo WhatsApp do contato. O conteúdo pode ser digitado, vir de um **modelo interno** ou de uma **resposta rápida**, com as variáveis preenchidas por dropdown.
   - `Send WhatsApp Template` — template aprovado da WABA, com preview e variáveis por seleção. Funciona fora da janela de 24h e suporta templates com botão **Flow**.
+  - `Send WhatsApp with Buttons (Interactive)` — mensagem com 1 a 3 botões de resposta rápida (Meta Cloud API). Body/header/footer/titles aceitam expressões n8n; o `ID` do botão vira o payload que chega no webhook quando o cliente clica. **Exige janela de 24h aberta** — fora dela, use template com botões pré-aprovado.
 - **Note**
   - `Create on Deal` — `POST /api/deals/:id/notes`. Cria uma nota vinculada ao negócio; a mesma nota aparece **tanto na aba "Notas" do deal em `/pipeline` quanto na timeline do `/inbox`** (como nota interna) se o contato do deal tiver conversa vigente. Requer o ajuste do backend que fez esta rota aceitar Bearer token e espelhar a nota como `Message` privada.
 - **Search**

@@ -29,6 +29,13 @@ export const messageOperations: INodeProperties[] = [
 				description:
 					'Envia um template aprovado da WABA, com as variáveis preenchidas por seleção. Funciona mesmo fora da janela de 24h.',
 			},
+			{
+				name: 'Send WhatsApp with Buttons (Interactive)',
+				value: 'sendInteractive',
+				action: 'Send whats app message with reply buttons',
+				description:
+					'Envia mensagem interativa de WhatsApp com 1 a 3 botões de resposta rápida (Meta Cloud API). Exige janela de 24h aberta — botões só aparecem dentro da sessão. Para fora da janela, use template.',
+			},
 		],
 		default: 'sendText',
 	},
@@ -37,6 +44,7 @@ export const messageOperations: INodeProperties[] = [
 const SHOW_ALL = { resource: ['message'] };
 const SHOW_CONTENT = { resource: ['message'], operation: ['sendNote', 'sendText'] };
 const SHOW_TEMPLATE = { resource: ['message'], operation: ['sendTemplate'] };
+const SHOW_INTERACTIVE = { resource: ['message'], operation: ['sendInteractive'] };
 
 export const messageFields: INodeProperties[] = [
 	{
@@ -246,6 +254,73 @@ export const messageFields: INodeProperties[] = [
 				],
 			},
 		],
+	},
+
+	// ── Botões interativos (Meta Cloud API) ──────
+	{
+		displayName: 'Body',
+		name: 'interactiveBody',
+		type: 'string',
+		required: true,
+		default: '',
+		typeOptions: { rows: 4 },
+		displayOptions: { show: SHOW_INTERACTIVE },
+		description:
+			'Texto principal exibido acima dos botões. Aceita expressões n8n ({{ $json.nome }}). Máx. 1024 caracteres (limite Meta).',
+	},
+	{
+		displayName: 'Buttons',
+		name: 'interactiveButtonsUi',
+		type: 'fixedCollection',
+		default: {},
+		placeholder: 'Adicionar botão',
+		typeOptions: { multipleValues: true, sortable: true, maxValue: 3 },
+		displayOptions: { show: SHOW_INTERACTIVE },
+		description:
+			'De 1 a 3 botões (limite Meta). A ordem aqui é a ordem que o cliente vê no WhatsApp.',
+		options: [
+			{
+				displayName: 'Button',
+				name: 'button',
+				values: [
+					{
+						displayName: 'Title',
+						name: 'title',
+						type: 'string',
+						required: true,
+						default: '',
+						description:
+							'Texto do botão que o cliente vê. Máx. 20 caracteres (a Meta corta o excesso). Aceita expressões n8n.',
+					},
+					{
+						displayName: 'ID (Payload)',
+						name: 'id',
+						type: 'string',
+						default: '',
+						description:
+							'Identificador retornado quando o cliente clica (chega no webhook como payload). Vazio gera btn_1/btn_2/btn_3 automaticamente. Máx. 256 caracteres.',
+					},
+				],
+			},
+		],
+	},
+	{
+		displayName: 'Header',
+		name: 'interactiveHeader',
+		type: 'string',
+		default: '',
+		displayOptions: { show: SHOW_INTERACTIVE },
+		description:
+			'Cabeçalho de texto (opcional). Aparece em negrito acima do body. Máx. 60 caracteres.',
+	},
+	{
+		displayName: 'Footer',
+		name: 'interactiveFooter',
+		type: 'string',
+		default: '',
+		displayOptions: { show: SHOW_INTERACTIVE },
+		description:
+			'Rodapé de texto (opcional). Aparece em cinza abaixo dos botões. Máx. 60 caracteres.',
 	},
 
 	// ── Opções ───────────────────────────────────
