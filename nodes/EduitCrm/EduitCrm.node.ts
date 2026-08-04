@@ -569,6 +569,75 @@ async function handleMessage(
 		return (await eduitApiRequest.call(this, 'POST', endpoint, requestBody)) as IDataObject;
 	}
 
+	if (operation === 'sendList') {
+		const listBody = (this.getNodeParameter('listBody', i, '') as string).trim();
+		if (!listBody) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'O texto do body é obrigatório para lista interativa.',
+				{ itemIndex: i },
+			);
+		}
+		const listButton = (this.getNodeParameter('listButton', i, '') as string).trim();
+		if (!listButton) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'O Button Label é obrigatório (rótulo do botão que abre a lista).',
+				{ itemIndex: i },
+			);
+		}
+
+		// `listRowsUi` é fixedCollection: `{ row: [{ title, description?, id? }] }`.
+		const rowsColl = this.getNodeParameter('listRowsUi', i, {}) as IDataObject;
+		const rowRows = (rowsColl.row as IDataObject[] | undefined) ?? [];
+		const rows = rowRows
+			.map((r) => {
+				const title = r && typeof r.title === 'string' ? r.title.trim() : '';
+				const description =
+					r && typeof r.description === 'string' ? r.description.trim() : '';
+				const id = r && typeof r.id === 'string' ? r.id.trim() : '';
+				return {
+					title,
+					...(description ? { description } : {}),
+					...(id ? { id } : {}),
+				};
+			})
+			.filter((r) => r.title.length > 0);
+
+		if (rows.length === 0) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'Informe ao menos 1 opção na lista (com Title preenchido).',
+				{ itemIndex: i },
+			);
+		}
+		if (rows.length > 10) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'Máximo de 10 opções na lista (limite Meta).',
+				{ itemIndex: i },
+			);
+		}
+
+		const sectionTitle = (this.getNodeParameter('listSectionTitle', i, '') as string).trim();
+		const header = (this.getNodeParameter('listHeader', i, '') as string).trim();
+		const footer = (this.getNodeParameter('listFooter', i, '') as string).trim();
+
+		const requestBody: IDataObject = {
+			kind: 'list',
+			body: listBody,
+			button: listButton,
+			rows,
+		};
+		if (sectionTitle) requestBody.sectionTitle = sectionTitle;
+		if (header) requestBody.header = header;
+		if (footer) requestBody.footer = footer;
+		if (options.channelId) requestBody.channelId = String(options.channelId).trim();
+		if (options.keepAutomations === true) requestBody.stopAutomations = false;
+
+		return (await eduitApiRequest.call(this, 'POST', endpoint, requestBody)) as IDataObject;
+	}
+
 	if (operation === 'sendTemplate') {
 		const templateName = (this.getNodeParameter('templateName', i, '') as string).trim();
 		if (!templateName) {

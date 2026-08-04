@@ -4,6 +4,47 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-04 - Message: envio WhatsApp com lista interativa (até 10 opções)
+
+**Decisão**
+
+Nova operation `Send WhatsApp List (Interactive)` no resource `Message`. Cobre o cenário de 4-10 opções, que o `type: button` (limitado a 3) não atende. Bate em `POST /api/deals/:id/messages` com `kind: "list"`:
+
+```json
+{
+  "kind": "list",
+  "body": "Escolha um curso:",
+  "button": "Ver cursos",
+  "sectionTitle": "Graduação",
+  "rows": [
+    { "id": "curso_adm", "title": "Administração", "description": "4 anos" },
+    { "id": "curso_eng", "title": "Engenharia" }
+  ]
+}
+```
+
+Backend expõe `sendInteractiveListToConversation` em `outbound-messaging.ts` e `metaClient.sendInteractiveList` em `lib/meta-whatsapp/client.ts` (não existia). Reuso 100% do padrão de `sendInteractiveButtonsToConversation` (reabrir ticket resolved, `requireChannelScope`, SSE, `afterOutboundSideEffects`).
+
+**Contexto**
+
+`type: button` da Cloud API é limitado a 3 reply buttons por hard-limit da Meta. Casos comuns do CRM (menu de cursos, horários, produtos) precisam de mais opções e a Meta oferece `type: list` como caminho oficial: 1 botão que abre um menu de até 10 rows.
+
+O node do n8n mantém UX simples — aceita `rows` no top-level e cria uma única seção por trás (`sectionTitle` opcional). O backend também aceita `sections: [{ title, rows }]` no shape puro da Cloud API como escape hatch para integrações que precisem de múltiplas seções.
+
+**Alternativas descartadas**
+
+- **Fundir buttons + list numa operation única** (com `Menu Type` como discriminador). Descartado: os campos são bastante diferentes (button não tem `Description` nem `Button Label`, list não tem `Header` estruturalmente idêntico). Duas operations deixam o formulário mais limpo.
+- **Permitir múltiplas seções direto no UI.** Descartado por complexidade: fixedCollection aninhada em fixedCollection é ruim de operar. Deixamos o `sections` só como escape via HTTP.
+- **Reaproveitar `messageType: "list"` no Message.** Descartado: mantivemos `messageType: "interactive"` para list e buttons (com `content` diferenciado — `[Lista: ...]` vs `[Botões: ...]`). Reduz variantes na timeline.
+
+**Impacto**
+
+- Backend: 3 arquivos — `lib/meta-whatsapp/client.ts` (novo método `sendInteractiveList`), `services/outbound-messaging.ts` (+250 LOC), `app/api/deals/[id]/messages/route.ts` (+55 LOC com o branch `list` e o parser `parseRows`).
+- Nodes: 2 arquivos — `MessageDescription.ts` (nova operation + campos), `EduitCrm.node.ts` (handler `sendList`).
+- Sem breaking change. `sendInteractive` (buttons) segue igual.
+
+---
+
 ### 2026-08-04 - Message: envio WhatsApp com botões interativos (reply buttons)
 
 **Decisão**

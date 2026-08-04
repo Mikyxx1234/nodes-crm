@@ -36,6 +36,13 @@ export const messageOperations: INodeProperties[] = [
 				description:
 					'Envia mensagem interativa de WhatsApp com 1 a 3 botões de resposta rápida (Meta Cloud API). Exige janela de 24h aberta — botões só aparecem dentro da sessão. Para fora da janela, use template.',
 			},
+			{
+				name: 'Send WhatsApp List (Interactive)',
+				value: 'sendList',
+				action: 'Send whats app message with list menu',
+				description:
+					'Envia mensagem interativa de WhatsApp com uma lista de até 10 opções (Meta Cloud API). Aparece como um botão único que abre um menu — use quando precisar de mais de 3 opções. Exige janela de 24h aberta.',
+			},
 		],
 		default: 'sendText',
 	},
@@ -45,6 +52,7 @@ const SHOW_ALL = { resource: ['message'] };
 const SHOW_CONTENT = { resource: ['message'], operation: ['sendNote', 'sendText'] };
 const SHOW_TEMPLATE = { resource: ['message'], operation: ['sendTemplate'] };
 const SHOW_INTERACTIVE = { resource: ['message'], operation: ['sendInteractive'] };
+const SHOW_LIST = { resource: ['message'], operation: ['sendList'] };
 
 export const messageFields: INodeProperties[] = [
 	{
@@ -321,6 +329,100 @@ export const messageFields: INodeProperties[] = [
 		displayOptions: { show: SHOW_INTERACTIVE },
 		description:
 			'Rodapé de texto (opcional). Aparece em cinza abaixo dos botões. Máx. 60 caracteres.',
+	},
+
+	// ── Lista interativa (Meta Cloud API) ────────
+	{
+		displayName: 'Body',
+		name: 'listBody',
+		type: 'string',
+		required: true,
+		default: '',
+		typeOptions: { rows: 4 },
+		displayOptions: { show: SHOW_LIST },
+		description:
+			'Texto principal exibido acima do botão que abre a lista. Aceita expressões n8n. Máx. 4096 caracteres (limite Meta).',
+	},
+	{
+		displayName: 'Button Label',
+		name: 'listButton',
+		type: 'string',
+		required: true,
+		default: 'Ver opções',
+		displayOptions: { show: SHOW_LIST },
+		description:
+			'Rótulo do botão único que o cliente toca para abrir a lista. Ex.: "Ver cursos", "Escolher horário". Máx. 20 caracteres.',
+	},
+	{
+		displayName: 'Section Title',
+		name: 'listSectionTitle',
+		type: 'string',
+		default: '',
+		displayOptions: { show: SHOW_LIST },
+		description:
+			'Nome da seção que agrupa as opções na lista (opcional). Máx. 24 caracteres. Vazio esconde o cabeçalho.',
+	},
+	{
+		displayName: 'Rows',
+		name: 'listRowsUi',
+		type: 'fixedCollection',
+		default: {},
+		placeholder: 'Adicionar opção',
+		typeOptions: { multipleValues: true, sortable: true, maxValue: 10 },
+		displayOptions: { show: SHOW_LIST },
+		description:
+			'De 1 a 10 opções na lista (limite Meta). A ordem aqui é a ordem que o cliente vê.',
+		options: [
+			{
+				displayName: 'Row',
+				name: 'row',
+				values: [
+					{
+						displayName: 'Title',
+						name: 'title',
+						type: 'string',
+						required: true,
+						default: '',
+						description:
+							'Texto principal da opção. Máx. 24 caracteres (a Meta corta o excesso). Aceita expressões n8n.',
+					},
+					{
+						displayName: 'Description',
+						name: 'description',
+						type: 'string',
+						default: '',
+						description:
+							'Texto secundário que aparece embaixo do title, em cinza (opcional). Máx. 72 caracteres.',
+					},
+					{
+						displayName: 'ID (Payload)',
+						name: 'id',
+						type: 'string',
+						default: '',
+						description:
+							'Identificador retornado quando o cliente escolhe (chega no webhook como payload). Vazio gera row_1/row_2/... automaticamente. Máx. 200 caracteres.',
+					},
+				],
+			},
+		],
+	},
+	{
+		displayName: 'Header',
+		name: 'listHeader',
+		type: 'string',
+		default: '',
+		displayOptions: { show: SHOW_LIST },
+		description:
+			'Cabeçalho de texto (opcional). Aparece em negrito acima do body. Máx. 60 caracteres.',
+	},
+	{
+		displayName: 'Footer',
+		name: 'listFooter',
+		type: 'string',
+		default: '',
+		displayOptions: { show: SHOW_LIST },
+		description:
+			'Rodapé de texto (opcional). Aparece em cinza abaixo do botão. Máx. 60 caracteres.',
 	},
 
 	// ── Opções ───────────────────────────────────
