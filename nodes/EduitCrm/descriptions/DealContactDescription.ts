@@ -117,4 +117,24 @@ export const dealContactFields: INodeProperties[] = [
 		['createWithContact'],
 		'Deal Custom Fields',
 	),
+
+	// ── Proteções contra reprocessamento ──
+	{
+		displayName: 'Avoid Duplicate Deal',
+		name: 'reuseOpenDeal',
+		type: 'boolean',
+		default: true,
+		displayOptions: { show: SHOW },
+		description:
+			'Whether to reuse the contact\'s open deal in the same pipeline instead of creating another one. Protects against duplicated items, retries and re-runs.',
+	},
+	{
+		displayName: 'Only Fill Empty Contact Fields',
+		name: 'fillEmptyContactFieldsOnly',
+		type: 'boolean',
+		default: true,
+		displayOptions: { show: SHOW },
+		description:
+			'Whether to keep values already filled in an existing contact, writing only into blank fields. Prevents a later run from overwriting a phone or name that is already correct.',
+	},
 ];

@@ -429,8 +429,22 @@ async function handleDealContact(
 	const dealCf = readCustomFields(this, 'dealCustomFieldsUi', i);
 	if (dealCf.length > 0) deal.customFields = dealCf;
 
-	const body: IDataObject = { contact, deal };
-	// Resposta real do backend: { contact, contactCreated, deal, dealCreated, missingCustomFields? }
+	// Idempotência: a mesma pessoa costuma chegar duas vezes (item duplicado na
+	// lista de origem, retry do workflow, execução repetida). Sem essas duas
+	// travas, a segunda passada cria um negócio extra no kanban e sobrescreve
+	// dados já corretos do contato — inclusive o telefone.
+	const options: IDataObject = {
+		reuseOpenDeal: this.getNodeParameter('reuseOpenDeal', i, true) as boolean,
+		fillEmptyContactFieldsOnly: this.getNodeParameter(
+			'fillEmptyContactFieldsOnly',
+			i,
+			true,
+		) as boolean,
+	};
+
+	const body: IDataObject = { contact, deal, options };
+	// Resposta real do backend:
+	// { contact, contactCreated, deal, dealCreated, dealReused, missingCustomFields? }
 	return (await eduitApiRequest.call(this, 'POST', '/api/leads', body)) as IDataObject;
 }
 

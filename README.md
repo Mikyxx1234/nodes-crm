@@ -129,6 +129,15 @@ O node suporta campos personalizados (custom fields) da organização em:
 
 Cada entrada tem um **dropdown com a lista de campos** (carregada de `GET /api/custom-fields`) e um **Value**. Em `Create`, o node primeiro cria o registro e depois grava os custom fields; em `Update`, grava direto. No `Create Deal With Contact`, os valores vão inline no `POST /api/leads`.
 
+## Reprocessamento (Create Deal With Contact)
+
+A mesma pessoa chega ao node mais de uma vez com frequência: item duplicado na lista de origem, retry, dois ramos que terminam no mesmo node, reexecução manual. Duas opções cuidam disso e **vêm ligadas por padrão**:
+
+- **Avoid Duplicate Deal** — se o contato já tem negócio aberto no mesmo pipeline, o node reaproveita esse negócio em vez de criar outro cartão. Os campos personalizados continuam sendo gravados nele. A saída traz `dealReused: true` quando isso acontece.
+- **Only Fill Empty Contact Fields** — em contato que já existe, o node só escreve nos campos hoje vazios. Um telefone ou nome já correto não é substituído por uma execução posterior que trouxe dado antigo. `Lead Score` fica de fora dessa regra (é numérico, `0` é valor válido).
+
+Desligue as duas se você realmente precisa criar vários negócios para o mesmo contato no mesmo pipeline, ou sobrescrever o cadastro a cada execução.
+
 Endpoints usados:
 
 - `GET /api/custom-fields?entity=contact|deal` — lista as definições para o dropdown (aceita Bearer).
