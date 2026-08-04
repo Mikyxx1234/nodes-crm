@@ -10,13 +10,24 @@ import type {
 import { NodeOperationError } from 'n8n-workflow';
 
 import {
+	applyVariables,
 	eduitApiRequest,
 	getContactCustomFields,
 	getDealCustomFields,
+	getFlowFields,
+	getInternalContentVariables,
+	getInternalTemplates,
 	getPipelines,
+	getQuickReplies,
 	getStages,
+	getWhatsappFlows,
+	getWhatsappTemplates,
+	getWhatsappTemplateVariables,
 	pruneEmpty,
 	readCustomFields,
+	readKeyValuePairs,
+	readTemplateVariables,
+	resolveInternalContentText,
 	resolveStageId,
 } from './GenericFunctions';
 import {
@@ -26,6 +37,8 @@ import {
 	dealContactOperations,
 	dealFields,
 	dealOperations,
+	messageFields,
+	messageOperations,
 	noteFields,
 	noteOperations,
 	searchFields,
@@ -40,7 +53,7 @@ export class EduitCrm implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Opera o Eduit CRM (contatos, negócios, deal+contato e busca)',
+		description: 'Opera o Eduit CRM (contatos, negócios, mensagens, notas e busca)',
 		defaults: { name: 'Eduit CRM' },
 		inputs: ['main'],
 		outputs: ['main'],
@@ -55,6 +68,7 @@ export class EduitCrm implements INodeType {
 					{ name: 'Deal + Contact', value: 'dealContact' },
 					{ name: 'Contact', value: 'contact' },
 					{ name: 'Deal', value: 'deal' },
+					{ name: 'Message', value: 'message' },
 					{ name: 'Note', value: 'note' },
 					{ name: 'Search', value: 'search' },
 				],
@@ -66,6 +80,8 @@ export class EduitCrm implements INodeType {
 			...contactFields,
 			...dealOperations,
 			...dealFields,
+			...messageOperations,
+			...messageFields,
 			...noteOperations,
 			...noteFields,
 			...searchOperations,
@@ -87,6 +103,31 @@ export class EduitCrm implements INodeType {
 			getDealCustomFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getDealCustomFields.call(this);
 			},
+			getWhatsappTemplates(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getWhatsappTemplates.call(this);
+			},
+			getWhatsappTemplateVariables(
+				this: ILoadOptionsFunctions,
+			): Promise<INodePropertyOptions[]> {
+				return getWhatsappTemplateVariables.call(this);
+			},
+			getInternalTemplates(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getInternalTemplates.call(this);
+			},
+			getQuickReplies(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getQuickReplies.call(this);
+			},
+			getInternalContentVariables(
+				this: ILoadOptionsFunctions,
+			): Promise<INodePropertyOptions[]> {
+				return getInternalContentVariables.call(this);
+			},
+			getWhatsappFlows(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getWhatsappFlows.call(this);
+			},
+			getFlowFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getFlowFields.call(this);
+			},
 		},
 	};
 
@@ -107,6 +148,8 @@ export class EduitCrm implements INodeType {
 					result = await handleDeal.call(this, operation, i);
 				} else if (resource === 'dealContact') {
 					result = await handleDealContact.call(this, operation, i);
+				} else if (resource === 'message') {
+					result = await handleMessage.call(this, operation, i);
 				} else if (resource === 'note') {
 					result = await handleNote.call(this, operation, i);
 				} else if (resource === 'search') {
@@ -389,6 +432,97 @@ async function handleDealContact(
 	const body: IDataObject = { contact, deal };
 	// Resposta real do backend: { contact, contactCreated, deal, dealCreated, missingCustomFields? }
 	return (await eduitApiRequest.call(this, 'POST', '/api/leads', body)) as IDataObject;
+}
+
+/**
+ * Envio de mensagem a partir de um negócio.
+ *
+ * Tudo passa por `POST /api/deals/:id/messages`: o CRM resolve o contato,
+ * reusa o atendimento em aberto (ou abre um novo no canal padrão) e aplica as
+ * mesmas regras de um envio feito por um operador no inbox — escopo de canal,
+ * reabertura de ticket encerrado e registro no log de atividades.
+ *
+ * Variáveis de template vão como `[{ component, key, value }]`; quem monta o
+ * `components` da Cloud API é o backend. Nenhum JSON da Meta é escrito aqui.
+ */
+async function handleMessage(
+	this: IExecuteFunctions,
+	operation: string,
+	i: number,
+): Promise<IDataObject> {
+	const dealId = (this.getNodeParameter('dealId', i) as string).trim();
+	if (!dealId) {
+		throw new NodeOperationError(this.getNode(), 'Deal ID é obrigatório.', { itemIndex: i });
+	}
+	const options = this.getNodeParameter('messageOptions', i, {}) as IDataObject;
+	const endpoint = `/api/deals/${encodeURIComponent(dealId)}/messages`;
+
+	if (operation === 'sendNote' || operation === 'sendText') {
+		const source = this.getNodeParameter('contentSource', i, 'manual') as string;
+
+		let content: string;
+		if (source === 'manual') {
+			content = (this.getNodeParameter('content', i, '') as string).trim();
+		} else {
+			const template = await resolveInternalContentText(this, source, {
+				internalTemplateId: this.getNodeParameter('internalTemplateId', i, '') as string,
+				quickReplyId: this.getNodeParameter('quickReplyId', i, '') as string,
+			});
+			const override = String(options.textOverride ?? '').trim();
+			const base = override || template;
+			content = applyVariables(base, readKeyValuePairs(this, 'contentVariablesUi', i)).trim();
+		}
+
+		if (!content) {
+			throw new NodeOperationError(
+				this.getNode(),
+				source === 'manual'
+					? 'Conteúdo da mensagem é obrigatório.'
+					: 'O modelo selecionado está vazio. Escolha outro ou use "Text Override".',
+				{ itemIndex: i },
+			);
+		}
+
+		const body: IDataObject = {
+			kind: operation === 'sendNote' ? 'note' : 'text',
+			content,
+		};
+		// Nota interna não passa por canal nem interrompe automações — enviar
+		// esses campos só confundiria o log de acesso da API.
+		if (operation === 'sendText') {
+			if (options.channelId) body.channelId = String(options.channelId).trim();
+			if (options.keepAutomations === true) body.stopAutomations = false;
+		}
+		return (await eduitApiRequest.call(this, 'POST', endpoint, body)) as IDataObject;
+	}
+
+	if (operation === 'sendTemplate') {
+		const templateName = (this.getNodeParameter('templateName', i, '') as string).trim();
+		if (!templateName) {
+			throw new NodeOperationError(this.getNode(), 'Selecione um template.', { itemIndex: i });
+		}
+
+		const body: IDataObject = {
+			kind: 'template',
+			templateName,
+			variables: readTemplateVariables(this, i),
+		};
+
+		const languageCode = String(options.languageCode ?? '').trim();
+		if (languageCode) body.languageCode = languageCode;
+		const flowToken = String(options.flowToken ?? '').trim();
+		if (flowToken) body.flowToken = flowToken;
+
+		const flowId = (this.getNodeParameter('flowId', i, '') as string).trim();
+		if (flowId) {
+			const flowActionData = readKeyValuePairs(this, 'flowActionDataUi', i);
+			if (Object.keys(flowActionData).length > 0) body.flowActionData = flowActionData;
+		}
+
+		return (await eduitApiRequest.call(this, 'POST', endpoint, body)) as IDataObject;
+	}
+
+	throw new NodeOperationError(this.getNode(), `Operação de mensagem não suportada: ${operation}`);
 }
 
 async function handleNote(

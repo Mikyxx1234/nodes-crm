@@ -15,6 +15,10 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
   - `Create` — `POST /api/deals`.
   - `Update` — `PUT /api/deals/:id`.
   - `Move Stage` — `PUT /api/deals/:id` com `stageId` (não usa `/api/deals/:id/move`, que depende de sessão).
+- **Message** — envio pelo negócio, tudo por seleção (ver [Enviar mensagem pelo deal](#enviar-mensagem-pelo-deal))
+  - `Send Internal Note` — nota interna: aparece na timeline do `/inbox` e na aba "Notas" do deal. O cliente não recebe nada.
+  - `Send WhatsApp Message` — texto livre pelo WhatsApp do contato. O conteúdo pode ser digitado, vir de um **modelo interno** ou de uma **resposta rápida**, com as variáveis preenchidas por dropdown.
+  - `Send WhatsApp Template` — template aprovado da WABA, com preview e variáveis por seleção. Funciona fora da janela de 24h e suporta templates com botão **Flow**.
 - **Note**
   - `Create on Deal` — `POST /api/deals/:id/notes`. Cria uma nota vinculada ao negócio; a mesma nota aparece **tanto na aba "Notas" do deal em `/pipeline` quanto na timeline do `/inbox`** (como nota interna) se o contato do deal tiver conversa vigente. Requer o ajuste do backend que fez esta rota aceitar Bearer token e espelhar a nota como `Message` privada.
 - **Search**
@@ -37,6 +41,7 @@ O usuário dono do token precisa das permissões:
 
 - `contact:create`, `contact:edit`
 - `deal:create`, `deal:edit`, `deal:change_stage` (e escopo do stage)
+- Para o resource **Message**: escopo de envio (`channel.send`) no canal WhatsApp usado. Para listar flows, o dono do token precisa ser **ADMIN** ou **MANAGER** — sem isso só o dropdown de flows fica vazio, o resto do node funciona normalmente.
 
 Sem elas, a API retorna `403`.
 
@@ -131,11 +136,64 @@ Endpoints usados:
 
 > O dropdown depende do backend com o ajuste que faz `GET /api/custom-fields` aceitar Bearer token. Se o seu backend ainda não tem esse ajuste, o dropdown fica vazio (faça o deploy do backend atualizado).
 
+## Enviar mensagem pelo deal
+
+O resource **Message** precisa apenas do **Deal ID**. O CRM resolve o contato, reusa o atendimento em aberto e, se não houver nenhum, abre um novo no canal WhatsApp padrão da organização — a mesma regra que as automações internas usam. Não é preciso descobrir `conversationId` nem criar conversa antes.
+
+Todo o envio passa por `POST /api/deals/:id/messages`, que aplica as mesmas regras de uma mensagem enviada por um operador no inbox: escopo de canal, reabertura de ticket encerrado como um novo, atualização em tempo real do inbox e registro no log de atividades.
+
+### Conteúdo: manual, modelo interno ou resposta rápida
+
+Em `Send Internal Note` e `Send WhatsApp Message`, o campo **Content Source** define a origem do texto:
+
+| Origem              | O que faz                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `Manual Text`       | Texto digitado direto no node.                                                          |
+| `Internal Template` | Modelo cadastrado em **Configurações → Modelos** (`GET /api/templates`).                |
+| `Quick Reply`       | Resposta rápida da org, a mesma do atalho `/` no inbox (`GET /api/quick-replies`).      |
+
+Ao escolher um modelo ou resposta rápida, o texto aparece na **descrição de cada opção do dropdown** e o bloco **Content Variables** lista automaticamente os `{{...}}` encontrados nele. A substituição acontece no node — o CRM recebe o texto final. Se quiser reescrever o texto mantendo a seleção como referência, use **Options → Text Override**.
+
+### Templates da Meta
+
+O dropdown **Template** lista os templates **aprovados** da WABA da organização (`GET /api/whatsapp-template-configs/approved`). A descrição de cada opção traz o cabeçalho, o corpo e os botões — é o preview do que será enviado, já que a UI de node do n8n não tem campo de preview reativo.
+
+O bloco **Template Variables** carrega só os placeholders que existem no template escolhido, identificados por componente:
+
+```
+Cabeçalho — {{1}}
+Corpo — {{nome}}
+Botão "Ver oferta" — {{1}}
+```
+
+O node envia `[{ component, key, value }]` e **o backend monta o `components` da Cloud API**. Placeholders posicionais (`{{1}}`) e nomeados (`{{nome}}`) são tratados automaticamente — nunca se escreve JSON da Meta no node.
+
+Idioma e corpo do template são resolvidos pelo servidor, então **Language Code** só é necessário quando o mesmo template existe em vários idiomas e você quer forçar um.
+
+### Flows
+
+Templates com botão **Flow** aceitam dados iniciais no formulário. Selecione o flow em **Flow** (`GET /api/whatsapp-flow-definitions`) e o bloco **Flow Initial Data** passa a listar os campos das telas daquele flow, para montar o `flow_action_data` por seleção. O **Flow Token** fica em `Options` e, vazio, é gerado pelo CRM a cada envio — que é o recomendado.
+
+### Automações em andamento
+
+Enviar texto encerra as automações ativas do contato, exatamente como a resposta de um operador no inbox — sem isso um salesbot em andamento continuaria mandando mensagens sobrepostas ao envio do workflow. Se o seu fluxo do n8n roda em paralelo a uma automação do CRM e você quer manter as duas, marque **Options → Keep Running Automations**. Notas internas e templates não interferem nas automações.
+
+### Requisitos de backend
+
+Este resource depende do backend com as rotas de 03/ago/26:
+
+- `POST /api/deals/:id/messages` — envio agregado por negócio (Bearer).
+- `GET /api/whatsapp-template-configs/approved`, `GET /api/templates`, `GET /api/quick-replies`, `GET /api/whatsapp-flow-definitions` e `GET /api/whatsapp-flow-definitions/:id` — passaram a aceitar Bearer para alimentar os dropdowns.
+
+Sem esse deploy, os dropdowns ficam vazios e o envio retorna `404`.
+
 ## Limitações conhecidas / pendências
 
 - **Owner (responsável) por dropdown:** indisponível nesta versão porque `GET /api/users` só aceita sessão NextAuth (não aceita token Bearer). Use o **Owner ID** manual. Quando existir um endpoint de usuários compatível com token, um dropdown será adicionado.
-- **WhatsApp (resource `Message`):** fora do v1. Não há endpoint Bearer amigável por telefone/contato (o envio por token existe só em `POST /api/conversations/:id/messages`, que exige `conversationId`; e `POST /api/conversations/create` depende de sessão). Pendente até um endpoint auxiliar ser criado no backend.
-- **`Note > Create on Deal`** só espelha a nota como `Message` no `/inbox` se o contato do deal tiver **alguma conversa vigente** (mais recente por `updatedAt`). Se o contato nunca teve conversa, a nota aparece só na aba "Notas" do deal em `/pipeline` (comportamento igual ao painel manual do deal).
+- **`Send WhatsApp Message` exige janela de 24h aberta.** Fora dela a Meta rejeita texto livre — use `Send WhatsApp Template`.
+- **Templates não funcionam em canais WhatsApp QR (Baileys).** O envio retorna `400` orientando usar texto.
+- **Deal ID é campo de texto**, não dropdown: listar todos os negócios da org não escala. Use a saída de `Deal > Search` ou `Search > Search Full Record` para obter o ID.
+- **`Note > Create on Deal`** só espelha a nota como `Message` no `/inbox` se o contato do deal tiver **alguma conversa vigente** (mais recente por `updatedAt`). Se o contato nunca teve conversa, a nota aparece só na aba "Notas" do deal em `/pipeline` (comportamento igual ao painel manual do deal). O `Message > Send Internal Note` é mais completo: abre a conversa quando possível e só cai nesse comportamento se o contato não tiver telefone ou a org não tiver canal conectado.
 
 ## Atualização em Update (preservação de campos)
 

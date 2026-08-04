@@ -4,6 +4,39 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-03 - Resource `Message`: envio pelo deal com template, modelo interno e flow
+
+**Decisão**
+
+Novo resource `Message` com três operations, todas partindo de um **Deal ID**:
+
+1. `Send Internal Note` — nota interna (inbox + aba Notas do deal).
+2. `Send WhatsApp Message` — texto livre, com conteúdo manual, de modelo interno ou de resposta rápida.
+3. `Send WhatsApp Template` — template aprovado da WABA, com preview e variáveis por seleção, incluindo templates com botão Flow.
+
+Tudo bate em `POST /api/deals/:id/messages`, endpoint agregador criado no backend nesta mesma data. O node não resolve conversa nem monta JSON da Meta: envia `dealId` + `kind` + campos amigáveis, e o servidor faz o resto.
+
+Sete `loadOptions` novos alimentam os dropdowns: templates aprovados, variáveis do template selecionado, modelos internos, respostas rápidas, variáveis do conteúdo interno, flows e campos das telas do flow.
+
+**Contexto**
+
+A entrada de 2026-07-30 registrava o resource `Message` como fora do v1 por falta de endpoint Bearer: enviar exigia `conversationId` e criar conversa dependia de sessão NextAuth. O backend resolveu isso resolvendo a conversa server-side a partir do deal.
+
+**Alternativas descartadas**
+
+- **Preview do template em campo próprio no node.** A UI de node do n8n não tem campo reativo a outro parâmetro — um `notice` é estático. Optamos por colocar cabeçalho, corpo e botões na `description` de cada opção do dropdown, que o n8n renderiza na própria lista no momento da escolha.
+- **`Deal ID` como dropdown.** Descartado: listar todos os negócios da organização não escala e o caso de uso real recebe o `dealId` do webhook ou de um node `Deal > Search` anterior.
+- **Buscar o corpo do template em runtime para renderizar o texto da timeline.** Descartado: `GET /whatsapp-template-configs/approved` pagina a Graph inteira e seria chamado uma vez por item processado. O backend passou a resolver corpo e idioma sozinho, então em runtime o node envia só o nome do template e as variáveis.
+- **Campo único de `flow_action_data` em JSON.** Descartado pelo requisito de seleção: o dropdown de flows libera a lista de campos das telas daquele flow, e as chaves viram opções.
+
+**Impacto**
+
+- 3 arquivos do node alterados (`EduitCrm.node.ts`, `GenericFunctions.ts`, `descriptions/index.ts`) e 1 criado (`descriptions/MessageDescription.ts`). Zero breaking change — nenhum resource existente foi tocado.
+- Depende do deploy do backend de 03/ago/26. Sem ele, os dropdowns ficam vazios e o envio retorna `404`.
+- Isolamento multi-tenant continua garantido pelo token: a org sai do `ApiToken`, e um `dealId` de outra organização retorna 404.
+
+---
+
 ### 2026-07-30 - Nodes v0.2: Search by Ad Source ID + Note on Deal
 
 **Decisão**
