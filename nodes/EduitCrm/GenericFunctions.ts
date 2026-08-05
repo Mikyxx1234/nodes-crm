@@ -55,6 +55,28 @@ type RawPipeline = {
 	stages?: Array<{ id: string; name: string }>;
 };
 
+type RawTag = { id: string; name: string; color?: string | null };
+
+/**
+ * Carrega as tags da organização (GET /api/tags devolve um array direto).
+ *
+ * O catálogo de tags é compartilhado entre contatos e negócios — a separação
+ * fica nas tabelas de junção do backend, então a mesma lista serve para os
+ * dois casos. A cor entra na `description` porque a org pode ter tags de nome
+ * parecido em contextos diferentes, e a cor é o que as distingue no board.
+ */
+export async function getTags(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+	const response = (await eduitApiRequest.call(this, 'GET', '/api/tags')) as
+		| RawTag[]
+		| { items?: RawTag[] };
+	const tags = Array.isArray(response) ? response : response.items ?? [];
+	return tags.map((t) => ({
+		name: t.name,
+		value: t.id,
+		...(t.color?.trim() ? { description: `Cor: ${t.color.trim()}` } : {}),
+	}));
+}
+
 /** Carrega os pipelines da org (GET /api/pipelines retorna um array direto). */
 export async function getPipelines(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 	const response = (await eduitApiRequest.call(this, 'GET', '/api/pipelines')) as

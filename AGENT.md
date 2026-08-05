@@ -4,6 +4,43 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-05 - Deal > Update: adicionar tags com dropdown do catálogo da org
+
+**Decisão**
+
+Campo `Tag Names or IDs` (`multiOptions`, `loadOptionsMethod: getTags`) dentro do bloco `Update Fields` de `Deal > Update`. Semântica **somente aditiva**: as tags escolhidas são somadas às que o negócio já tem, nada é removido.
+
+Zero mudança no backend — as três rotas necessárias já existiam e já aceitavam Bearer token:
+
+| Uso | Rota |
+| --- | --- |
+| Alimentar o dropdown | `GET /api/tags` (array puro `[{ id, name, color }]`) |
+| Aplicar a tag | `POST /api/deals/:id/tags` body `{ tagId }` |
+
+`tagIds` é removido do body antes do `PUT /api/deals/:id` porque tag não é coluna de `Deal`: a relação vive na junção `tags_on_deals` e tem rota dedicada. Mesmo tratamento dado ao toggle `includeDeals` em `Contact > Search`.
+
+**Contexto**
+
+Fluxos de qualificação no n8n precisam marcar o negócio (ex.: "Lead Quente", "Sem Perfil") depois de avaliar a resposta do cliente. Sem isso o operador tinha que taguear à mão no board.
+
+`POST /api/deals/:id/tags` aceita uma tag por request e faz upsert em `TagOnDeal`, o que torna a chamada idempotente — reexecutar o workflow não duplica vínculo nem quebra. Por isso o handler percorre a seleção em série, sem precisar de tratamento de conflito.
+
+**Alternativas descartadas**
+
+- **Aceitar `tags` no body do `PUT /api/deals/:id`.** Exigiria mexer em `updateDeal` no backend para tratar connect/disconnect da junção, e criaria um segundo caminho para a mesma escrita (a rota `POST .../tags` já registra `TAG_ADDED` e dispara o trigger `tag_added`). Usar a rota existente mantém uma verdade só.
+- **Semântica de substituição (as tags escolhidas passam a ser as únicas).** Descartada por decisão do usuário: o caso de uso é somar marcação, e substituir apagaria silenciosamente tags postas por operador ou por automação.
+- **Campo de texto livre para criar tag por nome.** O backend suporta (`{ tagName, color }` cria se faltar, com role ADMIN/MANAGER), mas ficou fora por decisão do usuário — só o dropdown das tags existentes.
+- **Tags em `Deal > Create`.** Fora do escopo pedido. `POST /api/deals` não aceita tags, exigiria uma segunda chamada pós-criação.
+
+**Impacto**
+
+- 4 arquivos do node: `GenericFunctions.ts` (novo `getTags`), `EduitCrm.node.ts` (registro do loadOptions + helper `addTagsToDeal` + extração de `tagIds` no update), `descriptions/DealDescription.ts` (campo novo), `README.md`.
+- Backend intocado — funciona no deploy atual, sem esperar redeploy.
+- Sem breaking change: quem não preencher o campo tem exatamente o comportamento anterior.
+- Isolamento multi-tenant pelo token: `GET /api/tags` só devolve tags da org do token, e um `tagId` de outra org falha na junção.
+
+---
+
 ### 2026-08-04 - Message: envio WhatsApp com lista interativa (até 10 opções)
 
 **Decisão**

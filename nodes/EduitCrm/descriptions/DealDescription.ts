@@ -113,6 +113,15 @@ export const dealFields: INodeProperties[] = [
 			{ displayName: 'Owner ID', name: 'ownerId', type: 'string', default: '' },
 			{ displayName: 'Position', name: 'position', type: 'number', typeOptions: { minValue: 0 }, default: 0 },
 			{ displayName: 'Lost Reason', name: 'lostReason', type: 'string', default: '' },
+			{
+				displayName: 'Tag Names or IDs',
+				name: 'tagIds',
+				type: 'multiOptions',
+				default: [],
+				typeOptions: { loadOptionsMethod: 'getTags' },
+				description:
+					'Tags a adicionar ao negócio. As tags já existentes no negócio são mantidas — nada é removido. Escolha na lista (as tags vêm de Configurações > Tags) ou use uma expressão com IDs de tag.',
+			},
 		],
 	},
 	customFieldsCollection('customFieldsUi', 'deal', 'deal', ['update']),

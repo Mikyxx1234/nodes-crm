@@ -20,6 +20,7 @@ import {
 	getPipelines,
 	getQuickReplies,
 	getStages,
+	getTags,
 	getWhatsappFlows,
 	getWhatsappTemplates,
 	getWhatsappTemplateVariables,
@@ -96,6 +97,9 @@ export class EduitCrm implements INodeType {
 			},
 			getStages(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getStages.call(this);
+			},
+			getTags(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getTags.call(this);
 			},
 			getContactCustomFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getContactCustomFields.call(this);
@@ -284,6 +288,28 @@ async function handleContact(
 	throw new NodeOperationError(this.getNode(), `Operação de contato não suportada: ${operation}`);
 }
 
+/**
+ * Vincula tags a um negócio via `POST /api/deals/:id/tags`.
+ *
+ * A rota aceita uma tag por chamada, então percorremos a lista em série — a
+ * seleção costuma ter poucas tags e serial preserva o rate limit da API. O
+ * backend faz upsert na junção, então reexecutar o workflow não duplica nem
+ * falha; tags que o negócio já tinha permanecem intactas.
+ */
+async function addTagsToDeal(
+	this: IExecuteFunctions,
+	dealId: string,
+	tagIds: string[],
+): Promise<IDataObject[]> {
+	const endpoint = `/api/deals/${encodeURIComponent(dealId)}/tags`;
+	const applied: IDataObject[] = [];
+	for (const tagId of tagIds) {
+		const res = (await eduitApiRequest.call(this, 'POST', endpoint, { tagId })) as IDataObject;
+		applied.push({ tagId, ...res });
+	}
+	return applied;
+}
+
 async function handleDeal(
 	this: IExecuteFunctions,
 	operation: string,
@@ -328,10 +354,18 @@ async function handleDeal(
 			throw new NodeOperationError(this.getNode(), 'Deal ID é obrigatório.', { itemIndex: i });
 		}
 		const updateFields = this.getNodeParameter('updateFields', i, {}) as IDataObject;
-		const body = pruneEmpty(updateFields);
+		// `tagIds` não é campo do Deal: PUT /api/deals/:id ignora `tags` no body.
+		// Tag vive em tabela de junção e tem rota própria, então é retirado daqui
+		// e aplicado depois via POST /api/deals/:id/tags.
+		const tagIds = Array.isArray(updateFields.tagIds)
+			? (updateFields.tagIds as unknown[])
+					.map((t) => String(t).trim())
+					.filter((t) => t.length > 0)
+			: [];
+		const body = pruneEmpty({ ...updateFields, tagIds: undefined });
 		const customFields = readCustomFields(this, 'customFieldsUi', i);
 
-		if (Object.keys(body).length === 0 && customFields.length === 0) {
+		if (Object.keys(body).length === 0 && customFields.length === 0 && tagIds.length === 0) {
 			throw new NodeOperationError(this.getNode(), 'Informe ao menos um campo para atualizar.', {
 				itemIndex: i,
 			});
@@ -353,6 +387,9 @@ async function handleDeal(
 				`/api/deals/${encodeURIComponent(dealId)}/custom-fields`,
 				{ values: customFields },
 			);
+		}
+		if (tagIds.length > 0) {
+			result.tags = await addTagsToDeal.call(this, dealId, tagIds);
 		}
 		return result;
 	}
