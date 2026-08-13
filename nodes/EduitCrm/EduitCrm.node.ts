@@ -17,6 +17,7 @@ import {
 	getFlowFields,
 	getInternalContentVariables,
 	getInternalTemplates,
+	getLossReasons,
 	getPipelines,
 	getQuickReplies,
 	getStages,
@@ -102,6 +103,9 @@ export class EduitCrm implements INodeType {
 			},
 			getStages(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getStages.call(this);
+			},
+			getLossReasons(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getLossReasons.call(this);
 			},
 			getTags(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getTags.call(this);
@@ -431,19 +435,31 @@ async function handleLossReason(
 	operation: string,
 	i: number,
 ): Promise<IDataObject | IDataObject[]> {
-	if (operation !== 'search') {
+	if (operation !== 'searchDeals') {
 		throw new NodeOperationError(
 			this.getNode(),
 			`Operação de motivo de perda não suportada: ${operation}`,
 		);
 	}
 
-	// GET /api/analytics/losses agrega deals LOST por motivo (lostReason).
-	// O filtro de data incide sobre Deal.closedAt — preenchido pelo backend
-	// no momento em que o negócio é marcado como perdido.
+	const lossReason = (this.getNodeParameter('lossReason', i, '') as string).trim();
 	const filters = this.getNodeParameter('filters', i, {}) as IDataObject;
-	const qs = pruneEmpty({ from: filters.from, to: filters.to });
-	const res = (await eduitApiRequest.call(this, 'GET', '/api/analytics/losses', {}, qs)) as IDataObject;
+
+	// GET /api/deals com status LOST + filtros avançados (mesmo payload do
+	// kanban): `lostReasons` casa exato com Deal.lostReason e `closedAt` é a
+	// data em que o negócio foi marcado como perdido.
+	const advanced: IDataObject = {};
+	if (lossReason) advanced.lostReasons = [lossReason];
+	const closedAt = pruneEmpty({ from: filters.from, to: filters.to });
+	if (Object.keys(closedAt).length > 0) advanced.closedAt = closedAt;
+
+	const qs = pruneEmpty({
+		status: 'LOST',
+		perPage: filters.perPage,
+		page: filters.page,
+		filters: Object.keys(advanced).length > 0 ? JSON.stringify(advanced) : undefined,
+	});
+	const res = (await eduitApiRequest.call(this, 'GET', '/api/deals', {}, qs)) as IDataObject;
 	return (res.items as IDataObject[]) ?? [res];
 }
 

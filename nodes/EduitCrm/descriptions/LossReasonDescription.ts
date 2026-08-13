@@ -9,20 +9,30 @@ export const lossReasonOperations: INodeProperties[] = [
 		displayOptions: { show: { resource: ['lossReason'] } },
 		options: [
 			{
-				name: 'Search',
-				value: 'search',
-				action: 'Search loss reasons',
+				name: 'Search Deals',
+				value: 'searchDeals',
+				action: 'Search lost deals by loss reason',
 				description:
-					'Motivos de perda agregados (quantidade e valor total por motivo), com filtro opcional pela data em que o negócio foi perdido',
+					'Lista os negócios perdidos (status LOST), com filtro opcional por motivo de perda e pela data em que foram perdidos',
 			},
 		],
-		default: 'search',
+		default: 'searchDeals',
 	},
 ];
 
-const SHOW = { resource: ['lossReason'], operation: ['search'] };
+const SHOW = { resource: ['lossReason'], operation: ['searchDeals'] };
 
 export const lossReasonFields: INodeProperties[] = [
+	{
+		displayName: 'Loss Reason',
+		name: 'lossReason',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getLossReasons' },
+		default: '',
+		displayOptions: { show: SHOW },
+		description:
+			'Motivo de perda usado no CRM (lista carregada da organização). Vazio = negócios perdidos com qualquer motivo. Escolha na lista ou use uma expressão.',
+	},
 	{
 		displayName: 'Filters',
 		name: 'filters',
@@ -46,6 +56,21 @@ export const lossReasonFields: INodeProperties[] = [
 				default: '',
 				description:
 					'Somente negócios perdidos até esta data (Deal.closedAt). Vazio = sem limite superior.',
+			},
+			{
+				displayName: 'Limit',
+				name: 'perPage',
+				type: 'number',
+				typeOptions: { minValue: 1 },
+				default: 20,
+				description: 'Máximo de negócios retornados por página',
+			},
+			{
+				displayName: 'Page',
+				name: 'page',
+				type: 'number',
+				typeOptions: { minValue: 1 },
+				default: 1,
 			},
 		],
 	},

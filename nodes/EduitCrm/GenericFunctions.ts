@@ -105,6 +105,31 @@ export async function getStages(this: ILoadOptionsFunctions): Promise<INodePrope
 	return stages.map((s) => ({ name: s.name, value: s.id }));
 }
 
+type RawLossReasonItem = { reason: string; count: number; totalValue: number };
+
+/**
+ * Carrega os motivos de perda em uso na org (GET /api/analytics/losses).
+ *
+ * A fonte são os deals LOST, então a lista cobre tanto o catálogo quanto
+ * textos livres já usados — motivos de catálogo nunca usados não aparecem
+ * (filtrar por eles retornaria 0 deals de qualquer forma). O placeholder
+ * "(sem motivo)" é excluído: deals sem motivo têm lostReason NULL e o
+ * filtro `lostReasons` da busca avançada não casaria com eles.
+ */
+export async function getLossReasons(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+	const response = (await eduitApiRequest.call(this, 'GET', '/api/analytics/losses')) as {
+		items?: RawLossReasonItem[];
+	};
+	const items = response.items ?? [];
+	return items
+		.filter((r) => typeof r.reason === 'string' && r.reason.trim() !== '' && r.reason !== '(sem motivo)')
+		.map((r) => ({
+			name: r.reason,
+			value: r.reason,
+			description: `${r.count} negócio(s) perdido(s)`,
+		}));
+}
+
 type RawCustomField = { id: string; name: string; label?: string };
 
 async function loadCustomFieldOptions(
