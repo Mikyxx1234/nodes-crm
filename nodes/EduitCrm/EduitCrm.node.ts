@@ -17,6 +17,7 @@ import {
 	getFlowFields,
 	getInternalContentVariables,
 	getInternalTemplates,
+	getLossReasons,
 	getPipelines,
 	getQuickReplies,
 	getStages,
@@ -38,6 +39,8 @@ import {
 	dealContactOperations,
 	dealFields,
 	dealOperations,
+	lossReasonFields,
+	lossReasonOperations,
 	messageFields,
 	messageOperations,
 	noteFields,
@@ -54,7 +57,7 @@ export class EduitCrm implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Opera o Eduit CRM (contatos, negócios, mensagens, notas e busca)',
+		description: 'Opera o Eduit CRM (contatos, negócios, mensagens, notas, busca e motivos de perda)',
 		defaults: { name: 'Eduit CRM' },
 		inputs: ['main'],
 		outputs: ['main'],
@@ -69,6 +72,7 @@ export class EduitCrm implements INodeType {
 					{ name: 'Deal + Contact', value: 'dealContact' },
 					{ name: 'Contact', value: 'contact' },
 					{ name: 'Deal', value: 'deal' },
+					{ name: 'Loss Reason', value: 'lossReason' },
 					{ name: 'Message', value: 'message' },
 					{ name: 'Note', value: 'note' },
 					{ name: 'Search', value: 'search' },
@@ -81,6 +85,8 @@ export class EduitCrm implements INodeType {
 			...contactFields,
 			...dealOperations,
 			...dealFields,
+			...lossReasonOperations,
+			...lossReasonFields,
 			...messageOperations,
 			...messageFields,
 			...noteOperations,
@@ -97,6 +103,9 @@ export class EduitCrm implements INodeType {
 			},
 			getStages(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getStages.call(this);
+			},
+			getLossReasons(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				return getLossReasons.call(this);
 			},
 			getTags(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				return getTags.call(this);
@@ -150,6 +159,8 @@ export class EduitCrm implements INodeType {
 					result = await handleContact.call(this, operation, i);
 				} else if (resource === 'deal') {
 					result = await handleDeal.call(this, operation, i);
+				} else if (resource === 'lossReason') {
+					result = await handleLossReason.call(this, operation, i);
 				} else if (resource === 'dealContact') {
 					result = await handleDealContact.call(this, operation, i);
 				} else if (resource === 'message') {
@@ -417,6 +428,39 @@ async function handleDeal(
 	}
 
 	throw new NodeOperationError(this.getNode(), `Operação de negócio não suportada: ${operation}`);
+}
+
+async function handleLossReason(
+	this: IExecuteFunctions,
+	operation: string,
+	i: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation !== 'searchDeals') {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Operação de motivo de perda não suportada: ${operation}`,
+		);
+	}
+
+	const lossReason = (this.getNodeParameter('lossReason', i, '') as string).trim();
+	const filters = this.getNodeParameter('filters', i, {}) as IDataObject;
+
+	// GET /api/deals com status LOST + filtros avançados (mesmo payload do
+	// kanban): `lostReasons` casa exato com Deal.lostReason e `closedAt` é a
+	// data em que o negócio foi marcado como perdido.
+	const advanced: IDataObject = {};
+	if (lossReason) advanced.lostReasons = [lossReason];
+	const closedAt = pruneEmpty({ from: filters.from, to: filters.to });
+	if (Object.keys(closedAt).length > 0) advanced.closedAt = closedAt;
+
+	const qs = pruneEmpty({
+		status: 'LOST',
+		perPage: filters.perPage,
+		page: filters.page,
+		filters: Object.keys(advanced).length > 0 ? JSON.stringify(advanced) : undefined,
+	});
+	const res = (await eduitApiRequest.call(this, 'GET', '/api/deals', {}, qs)) as IDataObject;
+	return (res.items as IDataObject[]) ?? [res];
 }
 
 async function handleDealContact(
