@@ -444,23 +444,48 @@ async function handleLossReason(
 
 	const lossReason = (this.getNodeParameter('lossReason', i, '') as string).trim();
 	const filters = this.getNodeParameter('filters', i, {}) as IDataObject;
+	const returnAll = this.getNodeParameter('returnAll', i, true) as boolean;
+	const limit = this.getNodeParameter('limit', i, 50) as number;
 
 	// GET /api/deals com status LOST + filtros avançados (mesmo payload do
-	// kanban): `lostReasons` casa exato com Deal.lostReason e `closedAt` é a
-	// data em que o negócio foi marcado como perdido.
+	// kanban): `lostReasons` casa exato com Deal.lostReason; `closedAt` é a
+	// data da perda; `createdAt` replica o filtro "criados em" do /pipeline.
 	const advanced: IDataObject = {};
 	if (lossReason) advanced.lostReasons = [lossReason];
 	const closedAt = pruneEmpty({ from: filters.from, to: filters.to });
 	if (Object.keys(closedAt).length > 0) advanced.closedAt = closedAt;
+	const createdAt = pruneEmpty({ from: filters.createdFrom, to: filters.createdTo });
+	if (Object.keys(createdAt).length > 0) advanced.createdAt = createdAt;
 
-	const qs = pruneEmpty({
+	const qsBase = pruneEmpty({
 		status: 'LOST',
-		perPage: filters.perPage,
-		page: filters.page,
 		filters: Object.keys(advanced).length > 0 ? JSON.stringify(advanced) : undefined,
 	});
-	const res = (await eduitApiRequest.call(this, 'GET', '/api/deals', {}, qs)) as IDataObject;
-	return (res.items as IDataObject[]) ?? [res];
+
+	// Teto do backend: perPage máx. 1000. Sem Return All o node antigo
+	// devolvia só a 1ª página (default 20) — daí o "só 20 deals".
+	const DEAL_PAGE_SIZE = 1000;
+	const perPage = returnAll ? DEAL_PAGE_SIZE : Math.min(DEAL_PAGE_SIZE, Math.max(1, limit));
+	const all: IDataObject[] = [];
+	let page = 1;
+
+	while (true) {
+		const res = (await eduitApiRequest.call(this, 'GET', '/api/deals', {}, {
+			...qsBase,
+			page,
+			perPage,
+		})) as IDataObject;
+		const items = (res.items as IDataObject[]) ?? [];
+		all.push(...items);
+
+		if (!returnAll) return all.slice(0, limit);
+
+		const total = typeof res.total === 'number' ? res.total : all.length;
+		if (all.length >= total || items.length === 0 || items.length < perPage) break;
+		page += 1;
+	}
+
+	return all;
 }
 
 async function handleDealContact(
