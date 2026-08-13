@@ -34,24 +34,6 @@ export const lossReasonFields: INodeProperties[] = [
 			'Motivo de perda usado no CRM (lista carregada da organização). Vazio = negócios perdidos com qualquer motivo. Escolha na lista ou use uma expressão.',
 	},
 	{
-		displayName: 'Return All',
-		name: 'returnAll',
-		type: 'boolean',
-		default: true,
-		displayOptions: { show: SHOW },
-		description:
-			'Whether to return every matching deal. The API pages at 1000 items; this walks all pages. Turn off to cap the result with Limit.',
-	},
-	{
-		displayName: 'Limit',
-		name: 'limit',
-		type: 'number',
-		default: 50,
-		typeOptions: { minValue: 1 },
-		displayOptions: { show: { ...SHOW, returnAll: [false] } },
-		description: 'Max number of deals to return',
-	},
-	{
 		displayName: 'Filters',
 		name: 'filters',
 		type: 'collection',
@@ -65,7 +47,7 @@ export const lossReasonFields: INodeProperties[] = [
 				type: 'dateTime',
 				default: '',
 				description:
-					'Somente negócios perdidos a partir desta data (Deal.closedAt — data da perda, não da criação). Vazio = sem limite inferior.',
+					'Somente negócios perdidos a partir desta data (Deal.closedAt). Vazio = sem limite inferior.',
 			},
 			{
 				displayName: 'Lost To',
@@ -73,23 +55,22 @@ export const lossReasonFields: INodeProperties[] = [
 				type: 'dateTime',
 				default: '',
 				description:
-					'Somente negócios perdidos até esta data (Deal.closedAt — data da perda, não da criação). Vazio = sem limite superior.',
+					'Somente negócios perdidos até esta data (Deal.closedAt). Vazio = sem limite superior.',
 			},
 			{
-				displayName: 'Created From',
-				name: 'createdFrom',
-				type: 'dateTime',
-				default: '',
-				description:
-					'Somente negócios criados a partir desta data (Deal.createdAt). Equivale ao filtro "criados em" do /pipeline.',
+				displayName: 'Limit',
+				name: 'perPage',
+				type: 'number',
+				typeOptions: { minValue: 1 },
+				default: 20,
+				description: 'Máximo de negócios retornados por página',
 			},
 			{
-				displayName: 'Created To',
-				name: 'createdTo',
-				type: 'dateTime',
-				default: '',
-				description:
-					'Somente negócios criados até esta data (Deal.createdAt). Equivale ao filtro "criados em" do /pipeline.',
+				displayName: 'Page',
+				name: 'page',
+				type: 'number',
+				typeOptions: { minValue: 1 },
+				default: 1,
 			},
 		],
 	},
