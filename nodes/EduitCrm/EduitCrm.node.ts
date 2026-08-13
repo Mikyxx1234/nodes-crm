@@ -38,6 +38,8 @@ import {
 	dealContactOperations,
 	dealFields,
 	dealOperations,
+	lossReasonFields,
+	lossReasonOperations,
 	messageFields,
 	messageOperations,
 	noteFields,
@@ -54,7 +56,7 @@ export class EduitCrm implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Opera o Eduit CRM (contatos, negócios, mensagens, notas e busca)',
+		description: 'Opera o Eduit CRM (contatos, negócios, mensagens, notas, busca e motivos de perda)',
 		defaults: { name: 'Eduit CRM' },
 		inputs: ['main'],
 		outputs: ['main'],
@@ -69,6 +71,7 @@ export class EduitCrm implements INodeType {
 					{ name: 'Deal + Contact', value: 'dealContact' },
 					{ name: 'Contact', value: 'contact' },
 					{ name: 'Deal', value: 'deal' },
+					{ name: 'Loss Reason', value: 'lossReason' },
 					{ name: 'Message', value: 'message' },
 					{ name: 'Note', value: 'note' },
 					{ name: 'Search', value: 'search' },
@@ -81,6 +84,8 @@ export class EduitCrm implements INodeType {
 			...contactFields,
 			...dealOperations,
 			...dealFields,
+			...lossReasonOperations,
+			...lossReasonFields,
 			...messageOperations,
 			...messageFields,
 			...noteOperations,
@@ -150,6 +155,8 @@ export class EduitCrm implements INodeType {
 					result = await handleContact.call(this, operation, i);
 				} else if (resource === 'deal') {
 					result = await handleDeal.call(this, operation, i);
+				} else if (resource === 'lossReason') {
+					result = await handleLossReason.call(this, operation, i);
 				} else if (resource === 'dealContact') {
 					result = await handleDealContact.call(this, operation, i);
 				} else if (resource === 'message') {
@@ -417,6 +424,27 @@ async function handleDeal(
 	}
 
 	throw new NodeOperationError(this.getNode(), `Operação de negócio não suportada: ${operation}`);
+}
+
+async function handleLossReason(
+	this: IExecuteFunctions,
+	operation: string,
+	i: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation !== 'search') {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Operação de motivo de perda não suportada: ${operation}`,
+		);
+	}
+
+	// GET /api/analytics/losses agrega deals LOST por motivo (lostReason).
+	// O filtro de data incide sobre Deal.closedAt — preenchido pelo backend
+	// no momento em que o negócio é marcado como perdido.
+	const filters = this.getNodeParameter('filters', i, {}) as IDataObject;
+	const qs = pruneEmpty({ from: filters.from, to: filters.to });
+	const res = (await eduitApiRequest.call(this, 'GET', '/api/analytics/losses', {}, qs)) as IDataObject;
+	return (res.items as IDataObject[]) ?? [res];
 }
 
 async function handleDealContact(
