@@ -4,6 +4,27 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-13 - Pin da imagem n8n em 2.33.3 (não usar `latest`)
+
+**Decisão**
+
+`Dockerfile` passa de `FROM n8nio/n8n:latest` para `FROM n8nio/n8n:2.33.3`.
+
+**Contexto**
+
+O serviço no EasyPanel rebuilda a cada push na `main`. Com `latest`, o build de 13/ago puxou n8n 2.35.x (tag atualizada no mesmo dia) e a UI caiu em "Service is not reachable". A instância estável em produção era `n8n@2.33.3` (`/healthz` ok, release no HTML). O node Eduit CRM não foi a causa da queda — foi o upgrade implícito do n8n no rebuild.
+
+**Alternativas descartadas**
+
+- Continuar em `latest` e "só rebuildar com cuidado". Qualquer commit na main vira upgrade de n8n.
+- Pular para 2.35.x de propósito. Sem teste de migração de DB/workflows; 2.35.2 estava como pre-release no GitHub no mesmo dia.
+
+**Impacto**
+
+Rebuilds seguintes instalam o node em cima da mesma major/minor que já rodava. Upgrade de n8n vira mudança explícita no Dockerfile.
+
+---
+
 ### 2026-08-05 - Deal > Update: adicionar tags com dropdown do catálogo da org
 
 **Decisão**

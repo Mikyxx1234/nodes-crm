@@ -75,11 +75,11 @@ npm link n8n-nodes-eduit-crm
 
 ### Opção 2 — Imagem Docker custom do n8n (Easypanel) — recomendado
 
-Este repositório **não é uma aplicação independente**: ele gera uma imagem Docker baseada em `n8nio/n8n:latest` com o node já instalado. O `Dockerfile` na raiz:
+Este repositório **não é uma aplicação independente**: ele gera uma imagem Docker baseada em `n8nio/n8n:2.33.3` (pinada) com o node já instalado. O `Dockerfile` na raiz:
 
 1. Compila o pacote (`npm ci` + `npm run build`).
 2. Empacota com `npm pack` (gera `n8n-nodes-eduit-crm-<versão>.tgz`).
-3. Parte de `FROM n8nio/n8n:latest`.
+3. Parte de `FROM n8nio/n8n:2.33.3` (versão pinada — **não** usar `latest`).
 4. Instala o `.tgz` em `/opt/n8n/custom`.
 5. Define `N8N_CUSTOM_EXTENSIONS=/opt/n8n/custom`.
 

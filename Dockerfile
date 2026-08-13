@@ -15,7 +15,14 @@ RUN npm pack
 # ──────────────────────────────────────────────
 # Stage 2: imagem final do n8n com o node instalado
 # ──────────────────────────────────────────────
-FROM n8nio/n8n:latest
+# Stage 2: imagem final do n8n com o node instalado.
+#
+# NÃO usar `n8nio/n8n:latest`. Cada push na main dispara rebuild no
+# EasyPanel; `latest` puxa a versão nova do n8n (ex.: 2.35.x no mesmo dia)
+# e o container cai com "Service is not reachable" até migrar/estabilizar.
+# Pin na versão que já está rodando em produção (confirmado no HTML:
+# n8n@2.33.3 em n8n-new-n8n.ca31ey.easypanel.host).
+FROM n8nio/n8n:2.33.3
 
 USER root
 
