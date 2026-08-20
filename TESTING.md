@@ -22,11 +22,19 @@ Testes manuais reais contra um ambiente do CRM. **Use primeiro um ambiente de DE
 - Execute.
 - **Esperado:** resposta com `contactCreated: true`, `dealCreated: true`, objetos `contact` e `deal` preenchidos. Status do contato/deal visível no CRM.
 
-## 2. Criar deal para contato já existente
+## 2. Criar deal para contato já existente (Create Deal With Contact)
 
 - Mesmo node, mas use o `Contact Phone` (ou `Contact Email`) do contato criado no teste 1.
 - Execute.
 - **Esperado:** `contactCreated: false` (reaproveitou), `dealCreated: true`, `contact.id` igual ao do teste 1. Não deve duplicar o contato.
+
+## 2b. Criar deal para contato já existente (Create Deal For Existing Contact)
+
+- Resource: **Deal + Contact** → **Create Deal For Existing Contact**.
+- Preencha: `Contact ID` (ou phone/email) do contato do teste 1, `Pipeline`, `Stage`, `Deal Title`.
+- Execute.
+- **Esperado:** `contactCreated: false`, `deal` preenchido, `contact.id` igual ao do teste 1.
+- Repita com um telefone que **não** existe. **Esperado:** erro "Contato não encontrado" — **não** cria contato.
 
 ## 3. Mover deal de fase (Move Stage)
 
@@ -77,6 +85,7 @@ Testes manuais reais contra um ambiente do CRM. **Use primeiro um ambiente de DE
 - [ ] Test da credencial passa.
 - [ ] Teste 1 cria contato + deal.
 - [ ] Teste 2 reaproveita contato (sem duplicar).
+- [ ] Teste 2b cria deal para contato existente e recusa contato inexistente.
 - [ ] Teste 3 move de fase via PUT.
 - [ ] Teste 4 preserva campos e grava `0`.
 - [ ] Teste 5 retorna 401.

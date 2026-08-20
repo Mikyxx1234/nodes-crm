@@ -463,11 +463,103 @@ async function handleLossReason(
 	return (res.items as IDataObject[]) ?? [res];
 }
 
+/**
+ * Localiza um contato que já existe (ID → telefone → e-mail). Não cria.
+ * 404 no GET por ID cai para telefone/e-mail; 401/403 sobem.
+ */
+async function resolveExistingContact(
+	this: IExecuteFunctions,
+	i: number,
+): Promise<IDataObject> {
+	const contactId = (this.getNodeParameter('contactId', i, '') as string).trim();
+	const phone = (this.getNodeParameter('contactPhone', i, '') as string).trim();
+	const email = (this.getNodeParameter('contactEmail', i, '') as string).trim();
+
+	if (!contactId && !phone && !email) {
+		throw new NodeOperationError(
+			this.getNode(),
+			'Informe o ID, telefone ou e-mail de um contato já existente. Este node não cria contato.',
+			{ itemIndex: i },
+		);
+	}
+
+	if (contactId) {
+		try {
+			const byId = (await eduitApiRequest.call(
+				this,
+				'GET',
+				`/api/contacts/${encodeURIComponent(contactId)}`,
+			)) as IDataObject;
+			if (byId?.id) return byId;
+		} catch (error) {
+			const httpCode = String((error as { httpCode?: string | number }).httpCode ?? '');
+			if (httpCode !== '404') throw error;
+		}
+	}
+
+	if (phone) {
+		const res = (await eduitApiRequest.call(
+			this,
+			'GET',
+			'/api/contacts',
+			{},
+			{ phone, perPage: 1 },
+		)) as IDataObject;
+		const items = (res.items as IDataObject[]) ?? [];
+		if (items[0]?.id) return items[0];
+	}
+
+	if (email) {
+		const res = (await eduitApiRequest.call(
+			this,
+			'GET',
+			'/api/contacts',
+			{},
+			{ email, perPage: 1 },
+		)) as IDataObject;
+		const items = (res.items as IDataObject[]) ?? [];
+		if (items[0]?.id) return items[0];
+	}
+
+	throw new NodeOperationError(
+		this.getNode(),
+		'Contato não encontrado. Informe um ID, telefone ou e-mail de um contato que já exista — este node não cria contato.',
+		{ itemIndex: i },
+	);
+}
+
 async function handleDealContact(
 	this: IExecuteFunctions,
 	operation: string,
 	i: number,
 ): Promise<IDataObject> {
+	if (operation === 'createForExistingContact') {
+		const existing = await resolveExistingContact.call(this, i);
+		const contactId = String(existing.id);
+		const stageId = resolveStageId(this, i);
+		if (!stageId) {
+			throw new NodeOperationError(
+				this.getNode(),
+				'Stage é obrigatório (Create Deal For Existing Contact).',
+				{ itemIndex: i },
+			);
+		}
+		const dealTitle = this.getNodeParameter('dealTitle', i, '') as string;
+		const dealExtra = this.getNodeParameter('dealExtra', i, {}) as IDataObject;
+		const deal = pruneEmpty({ stageId, title: dealTitle, ...dealExtra });
+		const dealCf = readCustomFields(this, 'dealCustomFieldsUi', i);
+		if (dealCf.length > 0) deal.customFields = dealCf;
+
+		const body: IDataObject = {
+			contact: { id: contactId },
+			deal,
+			options: {
+				reuseOpenDeal: this.getNodeParameter('reuseOpenDeal', i, true) as boolean,
+			},
+		};
+		return (await eduitApiRequest.call(this, 'POST', '/api/leads', body)) as IDataObject;
+	}
+
 	if (operation !== 'createWithContact') {
 		throw new NodeOperationError(this.getNode(), `Operação não suportada: ${operation}`);
 	}

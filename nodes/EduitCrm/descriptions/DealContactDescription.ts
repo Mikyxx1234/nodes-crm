@@ -22,12 +22,27 @@ export const dealContactOperations: INodeProperties[] = [
 				description:
 					'Acha o contato (por ID, telefone ou e-mail) ou cria, e cria o negócio já vinculado (POST /api/leads)',
 			},
+			{
+				name: 'Create Deal For Existing Contact',
+				value: 'createForExistingContact',
+				action: 'Create a deal for an existing contact',
+				description:
+					'Cria (ou reaproveita) um negócio vinculado a um contato que já existe. Não cria contato. Localiza por ID, telefone ou e-mail (POST /api/leads)',
+			},
 		],
 		default: 'createWithContact',
 	},
 ];
 
 const SHOW = { resource: ['dealContact'], operation: ['createWithContact'] };
+const SHOW_EXISTING = {
+	resource: ['dealContact'],
+	operation: ['createForExistingContact'],
+};
+const SHOW_DEAL = {
+	resource: ['dealContact'],
+	operation: ['createWithContact', 'createForExistingContact'],
+};
 
 export const dealContactFields: INodeProperties[] = [
 	// ── Identificação do contato ──
@@ -83,8 +98,39 @@ export const dealContactFields: INodeProperties[] = [
 		'Contact Custom Fields',
 	),
 
+	// ── Identificação do contato já existente (não cria) ──
+	{
+		displayName: 'Contact ID',
+		name: 'contactId',
+		type: 'string',
+		default: '',
+		displayOptions: { show: SHOW_EXISTING },
+		description:
+			'ID do contato já existente. Tem prioridade sobre telefone/e-mail. Se o ID não existir, o node falha — não cria contato.',
+	},
+	{
+		displayName: 'Contact Phone',
+		name: 'contactPhone',
+		type: 'string',
+		default: '',
+		placeholder: '+55 11 99999-9999',
+		displayOptions: { show: SHOW_EXISTING },
+		description:
+			'Localiza o contato existente (match por dígitos). Se não achar, o node falha — não cria contato.',
+	},
+	{
+		displayName: 'Contact Email',
+		name: 'contactEmail',
+		type: 'string',
+		default: '',
+		placeholder: 'nome@dominio.com',
+		displayOptions: { show: SHOW_EXISTING },
+		description:
+			'Localiza o contato existente. Se não achar, o node falha — não cria contato.',
+	},
+
 	// ── Negócio ──
-	...stageSelector('dealContact', ['createWithContact'], {
+	...stageSelector('dealContact', ['createWithContact', 'createForExistingContact'], {
 		stageHint: 'Stage onde o negócio será criado (obrigatório).',
 	}),
 	{
@@ -92,7 +138,7 @@ export const dealContactFields: INodeProperties[] = [
 		name: 'dealTitle',
 		type: 'string',
 		default: '',
-		displayOptions: { show: SHOW },
+		displayOptions: { show: SHOW_DEAL },
 		description: 'Título do negócio. Se vazio, o backend usa "Lead - {nome do contato}".',
 	},
 	{
@@ -101,7 +147,7 @@ export const dealContactFields: INodeProperties[] = [
 		type: 'collection',
 		placeholder: 'Add Field',
 		default: {},
-		displayOptions: { show: SHOW },
+		displayOptions: { show: SHOW_DEAL },
 		options: [
 			{ displayName: 'Value', name: 'value', type: 'number', default: 0 },
 			{ displayName: 'Status', name: 'status', type: 'options', options: DEAL_STATUS_OPTIONS, default: 'OPEN' },
@@ -114,7 +160,7 @@ export const dealContactFields: INodeProperties[] = [
 		'dealCustomFieldsUi',
 		'deal',
 		'dealContact',
-		['createWithContact'],
+		['createWithContact', 'createForExistingContact'],
 		'Deal Custom Fields',
 	),
 
@@ -124,7 +170,7 @@ export const dealContactFields: INodeProperties[] = [
 		name: 'reuseOpenDeal',
 		type: 'boolean',
 		default: true,
-		displayOptions: { show: SHOW },
+		displayOptions: { show: SHOW_DEAL },
 		description:
 			'Whether to reuse the contact\'s open deal in the same pipeline instead of creating another one. Protects against duplicated items, retries and re-runs.',
 	},

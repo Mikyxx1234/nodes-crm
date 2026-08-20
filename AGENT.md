@@ -4,6 +4,32 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-20 - Deal + Contact: Create Deal For Existing Contact
+
+**Decisão**
+
+Nova operation `Create Deal For Existing Contact` no resource `Deal + Contact`. Localiza o contato (ID → telefone → e-mail) e cria/reaproveita o negócio via `POST /api/leads`. **Não cria contato** se não achar — falha com erro claro.
+
+Zero mudança no backend: `GET /api/contacts/:id`, `GET /api/contacts?phone|email` e `POST /api/leads` já existem e já aceitam Bearer.
+
+**Contexto**
+
+`Create Deal With Contact` faz lead-or-create: se o telefone/e-mail não existir, nasce um contato novo. Fluxos que já têm o contato (webhook, `Contact > Search`, item anterior) precisam atribuir um negócio **sem** risco de duplicar cadastro.
+
+**Alternativas descartadas**
+
+- **Só promover `Contact ID` em `Deal > Create`.** `POST /api/deals` não tem `reuseOpenDeal` nem custom fields inline; a resposta também não traz `{ contact, deal, dealCreated, dealReused }`.
+- **Flag `requireExistingContact` em `POST /api/leads`.** Desnecessário: o node resolve o contato antes e só envia `{ contact: { id } }`. Sem o lookup prévio, o backend tentaria criar e falharia com "contact.name é obrigatório" — mensagem ruim.
+- **Operation em `Deal` em vez de `Deal + Contact`.** O caso de uso é o mesmo resource (negócio vinculado a contato); manter as duas operations juntas evita um terceiro caminho na UI.
+
+**Impacto**
+
+- 2 arquivos de código (`DealContactDescription.ts`, `EduitCrm.node.ts`) + README/TESTING.
+- Sem breaking change: `Create Deal With Contact` permanece o default.
+- Backend intocado.
+
+---
+
 ### 2026-08-13 - Pin da imagem n8n em 2.33.3 (não usar `latest`)
 
 **Decisão**

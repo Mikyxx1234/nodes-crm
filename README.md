@@ -6,6 +6,7 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
 
 - **Deal + Contact**
   - `Create Deal With Contact` (prioridade) — acha o contato (ID → telefone → e-mail) ou cria, e cria o negócio já vinculado. Usa `POST /api/leads` (atômico e idempotente por telefone/e-mail).
+  - `Create Deal For Existing Contact` — cria (ou reaproveita) um negócio para um contato **que já existe**. Localiza por ID → telefone → e-mail e **não cria contato** se não achar. Também usa `POST /api/leads`.
 - **Contact**
   - `Search` — `GET /api/contacts` (termo, e-mail exato, telefone exato, lifecycle, **Ad Source ID Meta CTWA**). Toggle `Include Deals` enriquece cada contato com `deals: [...]` (chamada extra `GET /api/deals?contactId=...`).
   - `Create` — `POST /api/contacts`.
@@ -131,12 +132,12 @@ O node suporta campos personalizados (custom fields) da organização em:
 
 Cada entrada tem um **dropdown com a lista de campos** (carregada de `GET /api/custom-fields`) e um **Value**. Em `Create`, o node primeiro cria o registro e depois grava os custom fields; em `Update`, grava direto. No `Create Deal With Contact`, os valores vão inline no `POST /api/leads`.
 
-## Reprocessamento (Create Deal With Contact)
+## Reprocessamento (Deal + Contact)
 
 A mesma pessoa chega ao node mais de uma vez com frequência: item duplicado na lista de origem, retry, dois ramos que terminam no mesmo node, reexecução manual. Duas opções cuidam disso e **vêm ligadas por padrão**:
 
-- **Avoid Duplicate Deal** — se o contato já tem negócio aberto no mesmo pipeline, o node reaproveita esse negócio em vez de criar outro cartão. Os campos personalizados continuam sendo gravados nele. A saída traz `dealReused: true` quando isso acontece.
-- **Only Fill Empty Contact Fields** — em contato que já existe, o node só escreve nos campos hoje vazios. Um telefone ou nome já correto não é substituído por uma execução posterior que trouxe dado antigo. `Lead Score` fica de fora dessa regra (é numérico, `0` é valor válido).
+- **Avoid Duplicate Deal** — se o contato já tem negócio aberto no mesmo pipeline, o node reaproveita esse negócio em vez de criar outro cartão. Os campos personalizados continuam sendo gravados nele. A saída traz `dealReused: true` quando isso acontece. Vale nas duas operations de Deal + Contact.
+- **Only Fill Empty Contact Fields** — só em `Create Deal With Contact`. Em contato que já existe, o node só escreve nos campos hoje vazios. Um telefone ou nome já correto não é substituído por uma execução posterior que trouxe dado antigo. `Lead Score` fica de fora dessa regra (é numérico, `0` é valor válido). `Create Deal For Existing Contact` não atualiza o cadastro do contato.
 
 Desligue as duas se você realmente precisa criar vários negócios para o mesmo contato no mesmo pipeline, ou sobrescrever o cadastro a cada execução.
 
