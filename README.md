@@ -12,7 +12,7 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
   - `Create` — `POST /api/contacts`.
   - `Update` — `PUT /api/contacts/:id`.
 - **Deal**
-  - `Search` — `GET /api/deals` (pipeline, stage, status, dono, contato). Cada negócio inclui `customFields` **somente com valor preenchido** (`[{ fieldId, name, label, type, value }]`). Requer o backend com o ajuste de 21/ago/26.
+  - `Search` — `GET /api/deals` (pipeline, stage, status, dono, contato). Cada negócio inclui `customFields` **somente com valor preenchido** (`[{ fieldId, name, label, type, value }]`), via `GET /api/deals/:id/custom-fields`.
   - `Create` — `POST /api/deals`.
   - `Update` — `PUT /api/deals/:id`. O campo `Tag Names or IDs` (dropdown alimentado por `GET /api/tags`) adiciona tags ao negócio via `POST /api/deals/:id/tags`, uma chamada por tag. As tags que o negócio já tinha são **preservadas** — a operação só soma.
   - `Move Stage` — `PUT /api/deals/:id` com `stageId` (não usa `/api/deals/:id/move`, que depende de sessão).

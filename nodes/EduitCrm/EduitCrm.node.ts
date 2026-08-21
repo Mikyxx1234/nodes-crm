@@ -321,6 +321,59 @@ async function addTagsToDeal(
 	return applied;
 }
 
+/**
+ * Mantém só custom fields com valor preenchido, no shape estável
+ * `{ fieldId, name, label, type, value }`.
+ */
+function filledDealCustomFields(raw: unknown): IDataObject[] {
+	if (!Array.isArray(raw)) return [];
+	const out: IDataObject[] = [];
+	for (const item of raw) {
+		if (!item || typeof item !== 'object') continue;
+		const row = item as IDataObject;
+		const value = row.value === undefined || row.value === null ? '' : String(row.value);
+		if (value.trim() === '') continue;
+		const fieldId = String(row.fieldId ?? row.customFieldId ?? '').trim();
+		out.push({
+			...(fieldId ? { fieldId } : {}),
+			...(row.name !== undefined ? { name: row.name } : {}),
+			...(row.label !== undefined ? { label: row.label } : {}),
+			...(row.type !== undefined ? { type: row.type } : {}),
+			value,
+		});
+	}
+	return out;
+}
+
+/**
+ * Anexa `customFields` preenchidos a cada negócio da listagem.
+ *
+ * `GET /api/deals` hoje não traz os valores. Cada deal chama
+ * `GET /api/deals/:id/custom-fields` (já Bearer) e descarta vazios.
+ * Se a listagem já vier com `customFields` (backend atualizado), não
+ * refaz a chamada.
+ */
+async function attachFilledDealCustomFields(
+	this: IExecuteFunctions,
+	deals: IDataObject[],
+): Promise<IDataObject[]> {
+	return Promise.all(
+		deals.map(async (deal) => {
+			if (Array.isArray(deal.customFields)) {
+				return { ...deal, customFields: filledDealCustomFields(deal.customFields) };
+			}
+			const dealId = deal.id ? String(deal.id).trim() : '';
+			if (!dealId) return { ...deal, customFields: [] };
+			const raw = await eduitApiRequest.call(
+				this,
+				'GET',
+				`/api/deals/${encodeURIComponent(dealId)}/custom-fields`,
+			);
+			return { ...deal, customFields: filledDealCustomFields(raw) };
+		}),
+	);
+}
+
 async function handleDeal(
 	this: IExecuteFunctions,
 	operation: string,
@@ -332,7 +385,8 @@ async function handleDeal(
 		const stageId = resolveStageId(this, i);
 		const qs = pruneEmpty({ ...filters, pipelineId, stageId });
 		const res = (await eduitApiRequest.call(this, 'GET', '/api/deals', {}, qs)) as IDataObject;
-		return (res.items as IDataObject[]) ?? [res];
+		const items = ((res.items as IDataObject[]) ?? [res]) as IDataObject[];
+		return attachFilledDealCustomFields.call(this, items);
 	}
 
 	if (operation === 'create') {

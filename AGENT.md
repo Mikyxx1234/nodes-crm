@@ -8,20 +8,20 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 **Decisão**
 
-O node **não muda o handler** de `Deal > Search` — ele já devolve o JSON de `GET /api/deals`. O backend passa a incluir `customFields` só com valor preenchido. Documentado no README.
+`Deal > Search` anexa `customFields` em cada negócio, **só os que têm valor**. Usa `GET /api/deals/:id/custom-fields` (já Bearer). Se a listagem já vier com `customFields` (backend futuro), não refaz a chamada.
 
 **Contexto**
 
-O Search mostrava `contact`/`stage`/`owner` e omitia campos personalizados do negócio (ex.: Match Candidato x Vaga).
+O JSON do Search trazia `contact`/`stage`/`owner` e omitia os campos personalizados do negócio. `GET /api/deals` não inclui esses valores. Push no `backend_crm1` foi negado (403), então o node resolve com a rota que já existe.
 
 **Alternativas descartadas**
 
-- **N+1 no node** (`GET /api/deals/:id/custom-fields` por item). Lento e duplica o que o backend já sabe.
-- **Flag no node para pedir custom fields.** A listagem de integração deve trazer o que está preenchido por padrão.
+- **Só mudar o backend (`getDeals`).** Correto a médio prazo, mas este agente não consegue push em `caiovpinheiro/backend_crm1`. Sem deploy do CRM o Search continuaria vazio.
+- **Trazer todos os custom fields da org, inclusive vazios.** Pedido explícito: só o que está preenchido.
 
 **Impacto**
 
-Depende do deploy do backend (`getDeals` em `caiovpinheiro/backend_crm1`). Sem esse deploy o Search continua sem `customFields`.
+Uma chamada extra por negócio retornado (padrão 20). Sem breaking change. Campo vazio não aparece no JSON.
 
 ---
 
