@@ -4,6 +4,27 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-21 - Deal > Search: custom fields preenchidos
+
+**Decisão**
+
+O node **não muda o handler** de `Deal > Search` — ele já devolve o JSON de `GET /api/deals`. O backend passa a incluir `customFields` só com valor preenchido. Documentado no README.
+
+**Contexto**
+
+O Search mostrava `contact`/`stage`/`owner` e omitia campos personalizados do negócio (ex.: Match Candidato x Vaga).
+
+**Alternativas descartadas**
+
+- **N+1 no node** (`GET /api/deals/:id/custom-fields` por item). Lento e duplica o que o backend já sabe.
+- **Flag no node para pedir custom fields.** A listagem de integração deve trazer o que está preenchido por padrão.
+
+**Impacto**
+
+Depende do deploy do backend (`getDeals` em `caiovpinheiro/backend_crm1`). Sem esse deploy o Search continua sem `customFields`.
+
+---
+
 ### 2026-08-20 - Deal + Contact: Create Deal For Existing Contact
 
 **Decisão**
