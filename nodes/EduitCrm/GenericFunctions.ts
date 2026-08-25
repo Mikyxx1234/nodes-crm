@@ -105,18 +105,44 @@ export async function getStages(this: ILoadOptionsFunctions): Promise<INodePrope
 	return stages.map((s) => ({ name: s.name, value: s.id }));
 }
 
+type RawLossReasonCatalog = {
+	id?: string;
+	label?: string;
+	isActive?: boolean;
+	pipelineIds?: string[];
+};
 type RawLossReasonItem = { reason: string; count: number; totalValue: number };
 
 /**
- * Carrega os motivos de perda em uso na org (GET /api/analytics/losses).
+ * Motivos de perda da org, na ordem do catálogo
+ * (`GET /api/settings/loss-reasons`). O value é o **label** — é o que
+ * o CRM grava em `Deal.lostReason`.
  *
- * A fonte são os deals LOST, então a lista cobre tanto o catálogo quanto
- * textos livres já usados — motivos de catálogo nunca usados não aparecem
- * (filtrar por eles retornaria 0 deals de qualquer forma). O placeholder
- * "(sem motivo)" é excluído: deals sem motivo têm lostReason NULL e o
- * filtro `lostReasons` da busca avançada não casaria com eles.
+ * Fallback: `GET /api/analytics/losses` (só motivos já usados em deals
+ * LOST) caso o backend ainda não aceite Bearer no catálogo.
  */
 export async function getLossReasons(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+	try {
+		const catalog = (await eduitApiRequest.call(this, 'GET', '/api/settings/loss-reasons')) as
+			| RawLossReasonCatalog[]
+			| { items?: RawLossReasonCatalog[] };
+		const rows = Array.isArray(catalog) ? catalog : catalog.items ?? [];
+		const options = rows
+			.filter(
+				(r) =>
+					typeof r.label === 'string' &&
+					r.label.trim() !== '' &&
+					r.isActive !== false,
+			)
+			.map((r) => ({
+				name: r.label!.trim(),
+				value: r.label!.trim(),
+			}));
+		if (options.length > 0) return options;
+	} catch {
+		// Catálogo ainda session-only — cai no agregado de deals perdidos.
+	}
+
 	const response = (await eduitApiRequest.call(this, 'GET', '/api/analytics/losses')) as {
 		items?: RawLossReasonItem[];
 	};

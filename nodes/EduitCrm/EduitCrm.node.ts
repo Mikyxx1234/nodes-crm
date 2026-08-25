@@ -427,10 +427,21 @@ async function handleDeal(
 					.map((t) => String(t).trim())
 					.filter((t) => t.length > 0)
 			: [];
-		const body = pruneEmpty({ ...updateFields, tagIds: undefined });
+		const lostReason =
+			typeof updateFields.lostReason === 'string' ? updateFields.lostReason.trim() : '';
+		const body = pruneEmpty({
+			...updateFields,
+			tagIds: undefined,
+			lostReason: undefined,
+		});
 		const customFields = readCustomFields(this, 'customFieldsUi', i);
 
-		if (Object.keys(body).length === 0 && customFields.length === 0 && tagIds.length === 0) {
+		if (
+			Object.keys(body).length === 0 &&
+			customFields.length === 0 &&
+			tagIds.length === 0 &&
+			!lostReason
+		) {
 			throw new NodeOperationError(this.getNode(), 'Informe ao menos um campo para atualizar.', {
 				itemIndex: i,
 			});
@@ -444,6 +455,28 @@ async function handleDeal(
 				`/api/deals/${encodeURIComponent(dealId)}`,
 				body,
 			)) as IDataObject;
+		}
+		if (lostReason) {
+			// Só gravar `lostReason` com status OPEN não aparece como motivo no
+			// CRM. `PUT /api/deals/:id/status` chama markDealLost (status LOST,
+			// closedAt, estágio Perdido). Fallback se a rota ainda for só sessão.
+			try {
+				result = (await eduitApiRequest.call(
+					this,
+					'PUT',
+					`/api/deals/${encodeURIComponent(dealId)}/status`,
+					{ status: 'LOST', lostReason },
+				)) as IDataObject;
+			} catch (error) {
+				const httpCode = String((error as { httpCode?: string | number }).httpCode ?? '');
+				if (httpCode !== '401' && httpCode !== '404') throw error;
+				result = (await eduitApiRequest.call(
+					this,
+					'PUT',
+					`/api/deals/${encodeURIComponent(dealId)}`,
+					{ status: 'LOST', lostReason },
+				)) as IDataObject;
+			}
 		}
 		if (customFields.length > 0) {
 			result.customFields = await eduitApiRequest.call(

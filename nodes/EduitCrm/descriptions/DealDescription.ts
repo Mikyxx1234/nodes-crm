@@ -91,7 +91,15 @@ export const dealFields: INodeProperties[] = [
 			{ displayName: 'Contact ID', name: 'contactId', type: 'string', default: '', description: 'Vincula o negócio a um contato existente' },
 			{ displayName: 'Owner ID', name: 'ownerId', type: 'string', default: '', description: 'ID do usuário dono. Dropdown indisponível nesta versão.' },
 			{ displayName: 'Position', name: 'position', type: 'number', typeOptions: { minValue: 0 }, default: 0 },
-			{ displayName: 'Lost Reason', name: 'lostReason', type: 'string', default: '' },
+			{
+				displayName: 'Lost Reason Name',
+				name: 'lostReason',
+				type: 'options',
+				typeOptions: { loadOptionsMethod: 'getLossReasons' },
+				default: '',
+				description:
+					'Motivo de perda do catálogo da org (Configurações → Motivos de perda). Escolha na lista ou use uma expressão com o texto exato do motivo.',
+			},
 		],
 	},
 	customFieldsCollection('customFieldsUi', 'deal', 'deal', ['create']),
@@ -112,7 +120,15 @@ export const dealFields: INodeProperties[] = [
 			{ displayName: 'Contact ID', name: 'contactId', type: 'string', default: '' },
 			{ displayName: 'Owner ID', name: 'ownerId', type: 'string', default: '' },
 			{ displayName: 'Position', name: 'position', type: 'number', typeOptions: { minValue: 0 }, default: 0 },
-			{ displayName: 'Lost Reason', name: 'lostReason', type: 'string', default: '' },
+			{
+				displayName: 'Lost Reason Name',
+				name: 'lostReason',
+				type: 'options',
+				typeOptions: { loadOptionsMethod: 'getLossReasons' },
+				default: '',
+				description:
+					'Motivo de perda do catálogo da org (Configurações → Motivos de perda). Escolha na lista ou use uma expressão com o texto exato do motivo.',
+			},
 			{
 				displayName: 'Tag Names or IDs',
 				name: 'tagIds',

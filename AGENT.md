@@ -4,6 +4,29 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-25 - Deal > Update: Lost Reason do catálogo e marca como LOST
+
+**Decisão**
+
+Campo `Lost Reason` em `Deal > Update` passa a ser dropdown (`getLossReasons`) com os motivos de **Configurações → Motivos de perda**. O value é o label (é o que o CRM grava em `Deal.lostReason`).
+
+Ao escolher um motivo, o node **não** faz só `PUT /api/deals` com a string: chama `PUT /api/deals/:id/status` `{ status: "LOST", lostReason }`, que roda `markDealLost` (status LOST, `closedAt`, move para o estágio Perdido). Sem isso o JSON até gravava `lostReason`, mas o card no kanban continuava `OPEN` e o motivo não aparecia.
+
+**Contexto**
+
+A lista vinha de `GET /api/analytics/losses` (só motivos já usados em deals LOST) e o campo era texto livre. A org tinha catálogo e o operador não via os motivos. Texto livre + status OPEN não preenche o campo de perda na UI.
+
+**Alternativas descartadas**
+
+- **Continuar texto livre.** O CRM valida o label contra o catálogo do funil (`assertLostReasonAllowed`). Texto inventado some na UI.
+- **Só gravar `lostReason` sem mudar status.** É o que já falhou: o deal #18612 ficou `OPEN` com `lostReason` preenchido e o kanban não mostrou o motivo.
+
+**Impacto**
+
+Depende do backend aceitar Bearer em `GET /api/settings/loss-reasons` e `PUT /api/deals/:id/status`. Sem isso o dropdown cai no fallback de analytics e o mark-lost cai no `PUT /api/deals` com `status: LOST`.
+
+---
+
 ### 2026-08-21 - Deal > Search: custom fields preenchidos
 
 **Decisão**

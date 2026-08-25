@@ -14,7 +14,7 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
 - **Deal**
   - `Search` — `GET /api/deals` (pipeline, stage, status, dono, contato). Cada negócio inclui `customFields` **somente com valor preenchido** (`[{ fieldId, name, label, type, value }]`), via `GET /api/deals/:id/custom-fields`.
   - `Create` — `POST /api/deals`.
-  - `Update` — `PUT /api/deals/:id`. O campo `Tag Names or IDs` (dropdown alimentado por `GET /api/tags`) adiciona tags ao negócio via `POST /api/deals/:id/tags`, uma chamada por tag. As tags que o negócio já tinha são **preservadas** — a operação só soma.
+  - `Update` — `PUT /api/deals/:id`. O campo **Lost Reason** é um dropdown do catálogo da org (`GET /api/settings/loss-reasons`). Ao escolher um motivo, o node marca o negócio como perdido (`PUT /api/deals/:id/status` → status `LOST` + `closedAt` + estágio Perdido). O campo `Tag Names or IDs` adiciona tags via `POST /api/deals/:id/tags`; as tags que o negócio já tinha são **preservadas**.
   - `Move Stage` — `PUT /api/deals/:id` com `stageId` (não usa `/api/deals/:id/move`, que depende de sessão).
 - **Message** — envio pelo negócio, tudo por seleção (ver [Enviar mensagem pelo deal](#enviar-mensagem-pelo-deal))
   - `Send Internal Note` — nota interna: aparece na timeline do `/inbox` e na aba "Notas" do deal. O cliente não recebe nada.
