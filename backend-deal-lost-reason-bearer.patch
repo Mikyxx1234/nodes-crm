@@ -1,0 +1,289 @@
+From dba7bd4b71497501fdc5a07bc71b2113870c315e Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 25 Aug 2026 16:13:35 +0000
+Subject: [PATCH] =?UTF-8?q?feat(api):=20Bearer=20no=20cat=C3=A1logo=20de?=
+ =?UTF-8?q?=20perda=20e=20no=20PUT=20de=20status=20do=20deal?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+GET /api/settings/loss-reasons e PUT /api/deals/:id/status passam a
+aceitar token Bearer para o n8n listar motivos da org e marcar
+negócio como perdido com markDealLost.
+---
+ AGENT.md                                   |  21 +++
+ src/app/api/deals/[id]/status/route.ts     | 158 +++++++++++----------
+ src/app/api/settings/loss-reasons/route.ts |  27 ++--
+ 3 files changed, 121 insertions(+), 85 deletions(-)
+
+diff --git a/AGENT.md b/AGENT.md
+index 912a263..1ea2be0 100644
+--- a/AGENT.md
++++ b/AGENT.md
+@@ -5,6 +5,27 @@ documenta **por que** algo foi feito, não **o que**.
+ 
+ ---
+ 
++### 2026-08-25 — Bearer em catálogo de perda e PUT status do deal
++
++**Modelo usado.** Cursor Grok 4.6.
++
++**Decisão.** `GET /api/settings/loss-reasons` e `PUT /api/deals/:id/status`
++passam a aceitar Bearer (`authenticateApiRequest`), além da sessão. O n8n
++precisa listar o catálogo da org e marcar negócio como perdido com o mesmo
++`markDealLost` da UI.
++
++**Contexto.** O node gravava `lostReason` via `PUT /api/deals` e o deal
++ficava `OPEN`; o dropdown usava analytics de deals já LOST, não o catálogo.
++POST de motivos continua só sessão (tela de configurações).
++
++**Alternativas descartadas.** Endpoint novo só para n8n. Reusar analytics
++como lista (omite motivos nunca usados).
++
++**Impacto.** 2 rotas. Sessão do CRM inalterada. `deal:view` para listar,
++`deal:edit` para mudar status.
++
++---
++
+ ### 2026-08-25 — Cache Redis: circuit breaker + gzip + singleflight
+ 
+ **Decisão.** No cliente de cache (`src/lib/cache/index.ts`): circuit breaker (5 timeouts → 15s sem Redis), `enableOfflineQueue: false`, reconnect no `Command timed out`, `commandTimeout` 2s (era 500ms), gzip de payload ≥8KB, singleflight in-memory no `wrap()`, chave do board hasheada. Não separar Redis de cache vs BullMQ neste passo.
+diff --git a/src/app/api/deals/[id]/status/route.ts b/src/app/api/deals/[id]/status/route.ts
+index 368bcff..f4bcba3 100644
+--- a/src/app/api/deals/[id]/status/route.ts
++++ b/src/app/api/deals/[id]/status/route.ts
+@@ -1,6 +1,7 @@
+ import { NextResponse } from "next/server";
+ 
+-import { auth } from "@/lib/auth";
++import { authenticateApiRequest, runWithApiUserContext } from "@/lib/api-auth";
++import { requirePermissionForUser } from "@/lib/authz/resource-policy";
+ import { getOrgSettingBool } from "@/lib/org-settings";
+ import { fireTrigger, notifyDealStageChanged } from "@/services/automation-triggers";
+ import { createDealEvent, getDealById, markDealLost, markDealWon, reopenDeal } from "@/services/deals";
+@@ -9,97 +10,100 @@ type RouteContext = { params: Promise<{ id: string }> };
+ 
+ export async function PUT(request: Request, context: RouteContext) {
+   try {
+-    const session = await auth();
+-    if (!session?.user) {
+-      return NextResponse.json({ message: "Não autorizado." }, { status: 401 });
+-    }
++    const authResult = await authenticateApiRequest(request);
++    if (!authResult.ok) return authResult.response;
+ 
+-    const { id } = await context.params;
+-    if (!id) {
+-      return NextResponse.json({ message: "ID inválido." }, { status: 400 });
+-    }
++    return await runWithApiUserContext(authResult.user, async () => {
++      const denied = await requirePermissionForUser(authResult.user, "deal:edit");
++      if (denied) return denied;
+ 
+-    let body: unknown;
+-    try {
+-      body = await request.json();
+-    } catch {
+-      return NextResponse.json({ message: "JSON inválido." }, { status: 400 });
+-    }
++      const { id } = await context.params;
++      if (!id) {
++        return NextResponse.json({ message: "ID inválido." }, { status: 400 });
++      }
+ 
+-    if (!body || typeof body !== "object") {
+-      return NextResponse.json({ message: "Corpo inválido." }, { status: 400 });
+-    }
++      let body: unknown;
++      try {
++        body = await request.json();
++      } catch {
++        return NextResponse.json({ message: "JSON inválido." }, { status: 400 });
++      }
+ 
+-    const b = body as Record<string, unknown>;
+-    if (b.status !== "WON" && b.status !== "LOST" && b.status !== "OPEN") {
+-      return NextResponse.json(
+-        { message: "status deve ser WON, LOST ou OPEN." },
+-        { status: 400 }
+-      );
+-    }
++      if (!body || typeof body !== "object") {
++        return NextResponse.json({ message: "Corpo inválido." }, { status: 400 });
++      }
+ 
+-    const existing = await getDealById(id);
+-    if (!existing) {
+-      return NextResponse.json({ message: "Negócio não encontrado." }, { status: 404 });
+-    }
++      const b = body as Record<string, unknown>;
++      if (b.status !== "WON" && b.status !== "LOST" && b.status !== "OPEN") {
++        return NextResponse.json(
++          { message: "status deve ser WON, LOST ou OPEN." },
++          { status: 400 },
++        );
++      }
++
++      const existing = await getDealById(id);
++      if (!existing) {
++        return NextResponse.json({ message: "Negócio não encontrado." }, { status: 404 });
++      }
+ 
+-    const dealId = existing.id;
++      const dealId = existing.id;
+ 
+-    try {
+-      const uid = (session.user as { id: string }).id;
+-      const fromStatus = existing.status;
++      try {
++        const uid = authResult.user.id;
++        const fromStatus = existing.status;
+ 
+-      // Ganho/Perdido/Reabrir podem MOVER a etapa (estágio terminal
+-      // Ganho/Perdido, ou volta pro operacional ao reabrir). Disparamos
+-      // "mudança de fase" também por aqui pra que automações "quando entra
+-      // na fase X" rodem mesmo quando o usuário usa o botão de status em
+-      // vez de arrastar no kanban. `fromStageId` vem do estado anterior.
+-      const fromStageId = existing.stageId;
++        // Ganho/Perdido/Reabrir podem MOVER a etapa (estágio terminal
++        // Ganho/Perdido, ou volta pro operacional ao reabrir). Disparamos
++        // "mudança de fase" também por aqui pra que automações "quando entra
++        // na fase X" rodem mesmo quando o usuário usa o botão de status em
++        // vez de arrastar no kanban. `fromStageId` vem do estado anterior.
++        const fromStageId = existing.stageId;
+ 
+-      if (b.status === "WON") {
+-        const deal = await markDealWon(dealId);
+-        createDealEvent(dealId, uid, "STATUS_CHANGED", { from: fromStatus, to: "WON" }).catch(() => {});
+-        fireTrigger("deal_won", { dealId, contactId: existing.contactId ?? undefined, data: { fromStatus } }).catch(() => {});
++        if (b.status === "WON") {
++          const deal = await markDealWon(dealId);
++          createDealEvent(dealId, uid, "STATUS_CHANGED", { from: fromStatus, to: "WON" }).catch(() => {});
++          fireTrigger("deal_won", { dealId, contactId: existing.contactId ?? undefined, data: { fromStatus } }).catch(() => {});
++          notifyDealStageChanged(dealId, fromStageId, deal.stageId, { contactId: existing.contactId ?? undefined }).catch(() => {});
++          return NextResponse.json(deal);
++        }
++        if (b.status === "LOST") {
++          const reason = typeof b.lostReason === "string" ? b.lostReason.trim() : "";
++          const required = await getOrgSettingBool("deals.loss_reason_required", false).catch(() => false);
++          if ((required || !reason) && !reason) {
++            return NextResponse.json(
++              { message: "lostReason é obrigatório quando status é LOST." },
++              { status: 400 },
++            );
++          }
++          const deal = await markDealLost(dealId, reason);
++          createDealEvent(dealId, uid, "STATUS_CHANGED", { from: fromStatus, to: "LOST", lostReason: reason }).catch(() => {});
++          fireTrigger("deal_lost", { dealId, contactId: existing.contactId ?? undefined, data: { fromStatus, lostReason: reason } }).catch(() => {});
++          notifyDealStageChanged(dealId, fromStageId, deal.stageId, { contactId: existing.contactId ?? undefined }).catch(() => {});
++          return NextResponse.json(deal);
++        }
++        const deal = await reopenDeal(dealId);
++        createDealEvent(dealId, uid, "STATUS_CHANGED", { from: fromStatus, to: "OPEN" }).catch(() => {});
+         notifyDealStageChanged(dealId, fromStageId, deal.stageId, { contactId: existing.contactId ?? undefined }).catch(() => {});
+         return NextResponse.json(deal);
+-      }
+-      if (b.status === "LOST") {
+-        const reason = typeof b.lostReason === "string" ? b.lostReason.trim() : "";
+-        const required = await getOrgSettingBool("deals.loss_reason_required", false).catch(() => false);
+-        if ((required || !reason) && !reason) {
++      } catch (err: unknown) {
++        if (err instanceof Error && err.message === "LOST_REASON_REQUIRED") {
+           return NextResponse.json(
+-            { message: "lostReason é obrigatório quando status é LOST." },
+-            { status: 400 }
++            { message: "Motivo da perda é obrigatório neste funil." },
++            { status: 400 },
+           );
+         }
+-        const deal = await markDealLost(dealId, reason);
+-        createDealEvent(dealId, uid, "STATUS_CHANGED", { from: fromStatus, to: "LOST", lostReason: reason }).catch(() => {});
+-        fireTrigger("deal_lost", { dealId, contactId: existing.contactId ?? undefined, data: { fromStatus, lostReason: reason } }).catch(() => {});
+-        notifyDealStageChanged(dealId, fromStageId, deal.stageId, { contactId: existing.contactId ?? undefined }).catch(() => {});
+-        return NextResponse.json(deal);
+-      }
+-      const deal = await reopenDeal(dealId);
+-      createDealEvent(dealId, uid, "STATUS_CHANGED", { from: fromStatus, to: "OPEN" }).catch(() => {});
+-      notifyDealStageChanged(dealId, fromStageId, deal.stageId, { contactId: existing.contactId ?? undefined }).catch(() => {});
+-      return NextResponse.json(deal);
+-    } catch (err: unknown) {
+-      if (err instanceof Error && err.message === "LOST_REASON_REQUIRED") {
+-        return NextResponse.json(
+-          { message: "Motivo da perda é obrigatório neste funil." },
+-          { status: 400 },
+-        );
+-      }
+-      if (err instanceof Error && err.message === "INVALID_LOST_REASON") {
+-        return NextResponse.json(
+-          {
+-            message:
+-              "Motivo da perda inválido. Selecione um dos motivos cadastrados em Configurações → Motivos de perda.",
+-          },
+-          { status: 400 },
+-        );
++        if (err instanceof Error && err.message === "INVALID_LOST_REASON") {
++          return NextResponse.json(
++            {
++              message:
++                "Motivo da perda inválido. Selecione um dos motivos cadastrados em Configurações → Motivos de perda.",
++            },
++            { status: 400 },
++          );
++        }
++        throw err;
+       }
+-      throw err;
+-    }
++    });
+   } catch (e: unknown) {
+     console.error(e);
+     if (typeof e === "object" && e !== null && "code" in e && (e as { code: string }).code === "P2025") {
+diff --git a/src/app/api/settings/loss-reasons/route.ts b/src/app/api/settings/loss-reasons/route.ts
+index 2813b60..0b09bd1 100644
+--- a/src/app/api/settings/loss-reasons/route.ts
++++ b/src/app/api/settings/loss-reasons/route.ts
+@@ -1,22 +1,33 @@
+ import { NextResponse } from "next/server";
+ 
++import { authenticateApiRequest, runWithApiUserContext } from "@/lib/api-auth";
+ import { withOrgContext } from "@/lib/auth-helpers";
++import { requirePermissionForUser } from "@/lib/authz/resource-policy";
+ import {
+   createLossReason,
+   listLossReasons,
+   reorderLossReasons,
+ } from "@/services/loss-reasons";
+ 
+-export async function GET() {
+-  return withOrgContext(async () => {
+-    try {
++/**
++ * GET /api/settings/loss-reasons — catálogo ativo da org.
++ * Aceita sessão e Bearer (n8n Deal > Update precisa listar os motivos).
++ */
++export async function GET(request: Request) {
++  try {
++    const authResult = await authenticateApiRequest(request);
++    if (!authResult.ok) return authResult.response;
++
++    return await runWithApiUserContext(authResult.user, async () => {
++      const denied = await requirePermissionForUser(authResult.user, "deal:view");
++      if (denied) return denied;
+       const reasons = await listLossReasons();
+       return NextResponse.json(reasons);
+-    } catch (e) {
+-      console.error(e);
+-      return NextResponse.json({ message: "Erro ao listar motivos." }, { status: 500 });
+-    }
+-  });
++    });
++  } catch (e) {
++    console.error(e);
++    return NextResponse.json({ message: "Erro ao listar motivos." }, { status: 500 });
++  }
+ }
+ 
+ export async function POST(request: Request) {
+-- 
+2.43.0
+
