@@ -1,0 +1,661 @@
+From ce4481a077baac08f4ef5ce4edaf372db25c6c55 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 26 Aug 2026 15:56:23 +0000
+Subject: [PATCH] =?UTF-8?q?feat(api):=20webhooks=20de=20integra=C3=A7?=
+ =?UTF-8?q?=C3=A3o=20para=20o=20n8n=20Trigger?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Registra URLs (n8n) e dispara POST em fireTrigger. Troca de responsável
+passa a sair também de assignDealOwner (bulk/distribuição/automação).
+---
+ AGENT.md                                      |  14 +
+ .../migration.sql                             |  27 ++
+ prisma/schema.prisma                          |  25 ++
+ .../api/integration-webhooks/[id]/route.ts    |  58 ++++
+ src/app/api/integration-webhooks/route.ts     |  98 +++++++
+ src/lib/prisma.ts                             |   1 +
+ src/services/automation-triggers.ts           |  14 +
+ src/services/contacts.ts                      |  12 +
+ src/services/deals.ts                         |  18 +-
+ src/services/integration-webhooks.ts          | 248 ++++++++++++++++++
+ 10 files changed, 514 insertions(+), 1 deletion(-)
+ create mode 100644 prisma/migrations/20260826153000_add_integration_webhooks/migration.sql
+ create mode 100644 src/app/api/integration-webhooks/[id]/route.ts
+ create mode 100644 src/app/api/integration-webhooks/route.ts
+ create mode 100644 src/services/integration-webhooks.ts
+
+diff --git a/AGENT.md b/AGENT.md
+index 4317c75..6767150 100644
+--- a/AGENT.md
++++ b/AGENT.md
+@@ -5,6 +5,20 @@ documenta **por que** algo foi feito, não **o que**.
+ 
+ ---
+ 
++### 2026-08-26 — Webhooks de integração (n8n Trigger)
++
++**Modelo usado.** Cursor Grok 4.6.
++
++**Decisão.** Tabela `integration_webhooks` + CRUD Bearer (`GET/POST /api/integration-webhooks`, `GET/DELETE /api/integration-webhooks/:id`). `fireTrigger` despacha POST fire-and-forget para as URLs da org que escutam o evento (ou `*`), inclusive quando não há automação interna. `assignDealOwner` passa a disparar `agent_changed` (bulk, distribuição, automação). Troca de responsável do contato dispara `contact_owner_changed` (não reusa `agent_changed`).
++
++**Contexto.** O n8n precisava de um Trigger por evento (primeiro: troca de responsável). O CRM só tinha automações internas — sem inscrição de webhook de saída.
++
++**Alternativas descartadas.** Polling no n8n (atraso + carga). Reusar `agent_changed` no contato (dispararia automações de deal). Endpoint só de `agent_changed` (outros eventos já passam por `fireTrigger`).
++
++**Impacto.** Nova tabela tenant-scoped. Permissões `deal:view` (listar) e `deal:edit` (criar/apagar). Payload: `{ event, occurredAt, organizationId, contactId, dealId, data }`. Header `X-Eduit-Signature: sha256=…` quando há secret.
++
++---
++
+ ### 2026-08-25 — Encerrar conversa limpa responsável do deal/contato
+ 
+ **Decisão.** Quando a conversa é encerrada SEM "manter atendente" (`conversation.keepAgentOnEnd` off), `updateConversationStatusInDb` agora também: loga `ASSIGNEE_CHANGED` (chat + timeline, "X removida da conversa") e chama `clearContactOwnershipOnClose` — zera `ownerId` dos deals ABERTOS do contato e `assignedToId` do contato, com `OWNER_CHANGED`/`CONTACT_OWNER_CHANGED` nos logs. Guardas: só limpa quem era o responsável removido, e só se nenhuma outra conversa aberta do contato ainda está com ele. O bulk-resolve (worker leads) faz o mesmo por par (contato, atendente).
+diff --git a/prisma/migrations/20260826153000_add_integration_webhooks/migration.sql b/prisma/migrations/20260826153000_add_integration_webhooks/migration.sql
+new file mode 100644
+index 0000000..b9c84c8
+--- /dev/null
++++ b/prisma/migrations/20260826153000_add_integration_webhooks/migration.sql
+@@ -0,0 +1,27 @@
++-- Webhooks de saída para integrações (n8n Trigger e similares).
++
++CREATE TABLE IF NOT EXISTS "integration_webhooks" (
++  "id" TEXT NOT NULL,
++  "organizationId" TEXT NOT NULL,
++  "url" TEXT NOT NULL,
++  "events" TEXT[] NOT NULL,
++  "secret" TEXT,
++  "isActive" BOOLEAN NOT NULL DEFAULT true,
++  "name" TEXT,
++  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  "updatedAt" TIMESTAMP(3) NOT NULL,
++  CONSTRAINT "integration_webhooks_pkey" PRIMARY KEY ("id")
++);
++
++CREATE UNIQUE INDEX IF NOT EXISTS "integration_webhooks_organizationId_url_key"
++  ON "integration_webhooks"("organizationId", "url");
++
++CREATE INDEX IF NOT EXISTS "integration_webhooks_organizationId_isActive_idx"
++  ON "integration_webhooks"("organizationId", "isActive");
++
++DO $$ BEGIN
++  ALTER TABLE "integration_webhooks"
++    ADD CONSTRAINT "integration_webhooks_organizationId_fkey"
++    FOREIGN KEY ("organizationId") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++EXCEPTION WHEN duplicate_object THEN NULL;
++END $$;
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 73ab3dc..76833e2 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -96,6 +96,7 @@ model Organization {
+   lossReasons              LossReason[]
+   pipelineLossReasons      PipelineLossReason[]
+   apiTokens                ApiToken[]
++  integrationWebhooks      IntegrationWebhook[]
+   mobileLayoutConfigs      MobileLayoutConfig[]
+   userDashboardLayouts     UserDashboardLayout[]
+   fieldLayoutConfigs       FieldLayoutConfig[]
+@@ -4104,6 +4105,30 @@ model ApiToken {
+   @@map("api_tokens")
+ }
+ 
++/// Webhook de saída para integrações (n8n Trigger).
++/// O CRM POSTa o evento em `url` quando `fireTrigger` dispara um tipo
++/// presente em `events` (ou quando `events` contém `*`).
++model IntegrationWebhook {
++  id             String       @id @default(cuid())
++  organizationId String
++  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
++  /// URL HTTPS do subscriber (webhook do n8n).
++  url            String
++  /// Tipos de evento (`agent_changed`, `stage_changed`, …) ou `*`.
++  events         String[]
++  /// Segredo HMAC-SHA256 enviado em `X-Eduit-Signature`.
++  secret         String?
++  isActive       Boolean      @default(true)
++  /// Rótulo opcional (ex.: nome do workflow n8n).
++  name           String?
++  createdAt      DateTime     @default(now())
++  updatedAt      DateTime     @updatedAt
++
++  @@unique([organizationId, url])
++  @@index([organizationId, isActive])
++  @@map("integration_webhooks")
++}
++
+ // ──────────────────────────────────────────────
+ // Campaigns & Segments
+ // ──────────────────────────────────────────────
+diff --git a/src/app/api/integration-webhooks/[id]/route.ts b/src/app/api/integration-webhooks/[id]/route.ts
+new file mode 100644
+index 0000000..7fc8171
+--- /dev/null
++++ b/src/app/api/integration-webhooks/[id]/route.ts
+@@ -0,0 +1,58 @@
++import { NextResponse } from "next/server";
++
++import { authenticateApiRequest, runWithApiUserContext } from "@/lib/api-auth";
++import { requirePermissionForUser } from "@/lib/authz/resource-policy";
++import {
++  deleteIntegrationWebhook,
++  getIntegrationWebhook,
++} from "@/services/integration-webhooks";
++
++type RouteContext = { params: Promise<{ id: string }> };
++
++export async function GET(request: Request, context: RouteContext) {
++  try {
++    const authResult = await authenticateApiRequest(request);
++    if (!authResult.ok) return authResult.response;
++
++    return await runWithApiUserContext(authResult.user, async () => {
++      const denied = await requirePermissionForUser(authResult.user, "deal:view");
++      if (denied) return denied;
++
++      const { id } = await context.params;
++      if (!id) return NextResponse.json({ message: "ID inválido." }, { status: 400 });
++
++      const row = await getIntegrationWebhook(id);
++      if (!row) return NextResponse.json({ message: "Webhook não encontrado." }, { status: 404 });
++      return NextResponse.json(row);
++    });
++  } catch (e) {
++    console.error(e);
++    return NextResponse.json({ message: "Erro ao buscar webhook." }, { status: 500 });
++  }
++}
++
++export async function DELETE(request: Request, context: RouteContext) {
++  try {
++    const authResult = await authenticateApiRequest(request);
++    if (!authResult.ok) return authResult.response;
++
++    return await runWithApiUserContext(authResult.user, async () => {
++      const denied = await requirePermissionForUser(authResult.user, "deal:edit");
++      if (denied) return denied;
++
++      const { id } = await context.params;
++      if (!id) return NextResponse.json({ message: "ID inválido." }, { status: 400 });
++
++      const existing = await getIntegrationWebhook(id);
++      if (!existing) {
++        return NextResponse.json({ message: "Webhook não encontrado." }, { status: 404 });
++      }
++
++      await deleteIntegrationWebhook(id);
++      return NextResponse.json({ ok: true });
++    });
++  } catch (e) {
++    console.error(e);
++    return NextResponse.json({ message: "Erro ao remover webhook." }, { status: 500 });
++  }
++}
+diff --git a/src/app/api/integration-webhooks/route.ts b/src/app/api/integration-webhooks/route.ts
+new file mode 100644
+index 0000000..43aa101
+--- /dev/null
++++ b/src/app/api/integration-webhooks/route.ts
+@@ -0,0 +1,98 @@
++import { NextResponse } from "next/server";
++
++import { authenticateApiRequest, runWithApiUserContext } from "@/lib/api-auth";
++import { requirePermissionForUser } from "@/lib/authz/resource-policy";
++import {
++  assertWebhookUrl,
++  createIntegrationWebhook,
++  listIntegrationWebhooks,
++  normalizeWebhookEvents,
++} from "@/services/integration-webhooks";
++
++export async function GET(request: Request) {
++  try {
++    const authResult = await authenticateApiRequest(request);
++    if (!authResult.ok) return authResult.response;
++
++    return await runWithApiUserContext(authResult.user, async () => {
++      const denied = await requirePermissionForUser(authResult.user, "deal:view");
++      if (denied) return denied;
++      if (!authResult.user.organizationId) {
++        return NextResponse.json({ message: "Sem organização." }, { status: 400 });
++      }
++
++      const items = await listIntegrationWebhooks();
++      return NextResponse.json(items);
++    });
++  } catch (e) {
++    console.error(e);
++    return NextResponse.json({ message: "Erro ao listar webhooks." }, { status: 500 });
++  }
++}
++
++export async function POST(request: Request) {
++  try {
++    const authResult = await authenticateApiRequest(request);
++    if (!authResult.ok) return authResult.response;
++
++    return await runWithApiUserContext(authResult.user, async () => {
++      const denied = await requirePermissionForUser(authResult.user, "deal:edit");
++      if (denied) return denied;
++      const orgId = authResult.user.organizationId;
++      if (!orgId) {
++        return NextResponse.json({ message: "Sem organização." }, { status: 400 });
++      }
++
++      let body: unknown;
++      try {
++        body = await request.json();
++      } catch {
++        return NextResponse.json({ message: "JSON inválido." }, { status: 400 });
++      }
++      if (!body || typeof body !== "object") {
++        return NextResponse.json({ message: "Corpo inválido." }, { status: 400 });
++      }
++
++      const b = body as Record<string, unknown>;
++      const url = typeof b.url === "string" ? b.url.trim() : "";
++      const urlError = assertWebhookUrl(url);
++      if (urlError) return NextResponse.json({ message: urlError }, { status: 400 });
++
++      const events = normalizeWebhookEvents(b.events);
++      if (!events) {
++        return NextResponse.json(
++          { message: "events deve ser um array com ao menos um evento conhecido (ou *)." },
++          { status: 400 },
++        );
++      }
++
++      const name =
++        typeof b.name === "string" && b.name.trim() ? b.name.trim().slice(0, 200) : null;
++
++      try {
++        const created = await createIntegrationWebhook({
++          url,
++          events,
++          name,
++          organizationId: orgId,
++        });
++        return NextResponse.json(created, { status: 201 });
++      } catch (err) {
++        const code =
++          err && typeof err === "object" && "code" in err
++            ? String((err as { code: unknown }).code)
++            : "";
++        if (code === "P2002") {
++          return NextResponse.json(
++            { message: "Já existe um webhook com esta URL nesta organização." },
++            { status: 409 },
++          );
++        }
++        throw err;
++      }
++    });
++  } catch (e) {
++    console.error(e);
++    return NextResponse.json({ message: "Erro ao criar webhook." }, { status: 500 });
++  }
++}
+diff --git a/src/lib/prisma.ts b/src/lib/prisma.ts
+index 2867941..0cf0fc4 100644
+--- a/src/lib/prisma.ts
++++ b/src/lib/prisma.ts
+@@ -130,6 +130,7 @@ const SCOPED_MODELS = new Set<Prisma.ModelName>([
+   "PipelineLossReason",
+   "Tabulation",
+   "ApiToken",
++  "IntegrationWebhook",
+   "MobileLayoutConfig",
+   "UserDashboardLayout",
+   "WebPushSubscription",
+diff --git a/src/services/automation-triggers.ts b/src/services/automation-triggers.ts
+index b1f2aa5..bbef6e8 100644
+--- a/src/services/automation-triggers.ts
++++ b/src/services/automation-triggers.ts
+@@ -9,6 +9,7 @@ import {
+   evaluateTrigger,
+   type AutomationJobContext,
+ } from "@/services/automations";
++import { dispatchIntegrationWebhooks } from "@/services/integration-webhooks";
+ 
+ function asRecord(v: unknown): Record<string, unknown> | null {
+   if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+@@ -465,6 +466,19 @@ async function listActiveAutomationsForTrigger(event: string) {
+ export async function fireTrigger(  event: string,
+   context: { contactId?: string; dealId?: string; data?: unknown; depth?: number }
+ ): Promise<void> {
++  // n8n / integrações: dispara mesmo se não houver automação interna
++  // e mesmo quando o inbound está em atendimento humano.
++  void dispatchIntegrationWebhooks(event, {
++    contactId: context.contactId,
++    dealId: context.dealId,
++    data: context.data,
++  }).catch((err) => {
++    console.warn(
++      "[fireTrigger] integration webhook dispatch failed:",
++      err instanceof Error ? err.message : err,
++    );
++  });
++
+   // Guarda só no INBOUND: não responder por cima de atendimento humano.
+   // message_sent é ação do agente e não pode ser suprimido por ela.
+   if (event === "message_received" && context.contactId) {
+diff --git a/src/services/contacts.ts b/src/services/contacts.ts
+index ae99964..e6b8420 100644
+--- a/src/services/contacts.ts
++++ b/src/services/contacts.ts
+@@ -1257,6 +1257,18 @@ export async function updateContact(id: string, data: UpdateContactInput) {
+         newValue: data.assignedToId ?? null,
+         meta: { from: prev.assignedToId, to: data.assignedToId ?? null },
+       });
++      // Evento próprio (não reusa agent_changed — esse dispara automações de deal).
++      void import("@/services/automation-triggers")
++        .then(({ fireTrigger }) =>
++          fireTrigger("contact_owner_changed", {
++            contactId: id,
++            data: {
++              fromAssignedToId: prev.assignedToId,
++              toAssignedToId: data.assignedToId ?? null,
++            },
++          }),
++        )
++        .catch(() => {});
+     }
+   }
+ 
+diff --git a/src/services/deals.ts b/src/services/deals.ts
+index f6b4890..bf016b6 100644
+--- a/src/services/deals.ts
++++ b/src/services/deals.ts
+@@ -799,6 +799,10 @@ export async function assignDealOwner(
+   ownerId: string | null,
+ ) {
+   const deal = await prisma.$transaction(async (tx) => {
++    const current = await tx.deal.findUnique({
++      where: { id: dealId },
++      select: { ownerId: true },
++    });
+     const row = await tx.deal.update({
+       where: { id: dealId },
+       data: { ownerId },
+@@ -810,11 +814,23 @@ export async function assignDealOwner(
+       },
+     });
+     await propagateOwnerToContactAndChat(tx, row.contactId, ownerId);
+-    return row;
++    return { ...row, fromOwnerId: current?.ownerId ?? null };
+   });
+ 
+   await invalidateBoardsForPipelines([deal.stage?.pipelineId]);
+ 
++  if (deal.fromOwnerId !== ownerId) {
++    void import("@/services/automation-triggers")
++      .then(({ fireTrigger }) =>
++        fireTrigger("agent_changed", {
++          dealId: deal.id,
++          contactId: deal.contactId ?? undefined,
++          data: { fromOwnerId: deal.fromOwnerId, toOwnerId: ownerId },
++        }),
++      )
++      .catch(() => {});
++  }
++
+   return deal;
+ }
+ 
+diff --git a/src/services/integration-webhooks.ts b/src/services/integration-webhooks.ts
+new file mode 100644
+index 0000000..19ee5a3
+--- /dev/null
++++ b/src/services/integration-webhooks.ts
+@@ -0,0 +1,248 @@
++import { createHmac, randomBytes } from "crypto";
++
++import { prisma } from "@/lib/prisma";
++import { getOrgIdOrNull } from "@/lib/request-context";
++
++export const INTEGRATION_WEBHOOK_EVENTS = [
++  "agent_changed",
++  "contact_owner_changed",
++  "lead_distributed",
++  "stage_changed",
++  "deal_created",
++  "deal_won",
++  "deal_lost",
++  "contact_created",
++  "tag_added",
++  "conversation_created",
++  "lifecycle_changed",
++  "message_received",
++  "message_sent",
++] as const;
++
++export type IntegrationWebhookEvent = (typeof INTEGRATION_WEBHOOK_EVENTS)[number];
++
++const KNOWN_EVENTS = new Set<string>(INTEGRATION_WEBHOOK_EVENTS);
++
++const DISPATCH_TIMEOUT_MS = 8_000;
++
++export type IntegrationWebhookRecord = {
++  id: string;
++  url: string;
++  events: string[];
++  isActive: boolean;
++  name: string | null;
++  createdAt: Date;
++  updatedAt: Date;
++};
++
++function publicShape(row: {
++  id: string;
++  url: string;
++  events: string[];
++  isActive: boolean;
++  name: string | null;
++  createdAt: Date;
++  updatedAt: Date;
++}): IntegrationWebhookRecord {
++  return {
++    id: row.id,
++    url: row.url,
++    events: row.events,
++    isActive: row.isActive,
++    name: row.name,
++    createdAt: row.createdAt,
++    updatedAt: row.updatedAt,
++  };
++}
++
++function isHttpsUrl(url: string): boolean {
++  try {
++    const parsed = new URL(url);
++    return parsed.protocol === "https:" || parsed.protocol === "http:";
++  } catch {
++    return false;
++  }
++}
++
++export function normalizeWebhookEvents(raw: unknown): string[] | null {
++  if (!Array.isArray(raw) || raw.length === 0) return null;
++  const out: string[] = [];
++  const seen = new Set<string>();
++  for (const item of raw) {
++    if (typeof item !== "string") return null;
++    const event = item.trim();
++    if (!event) return null;
++    if (event !== "*" && !KNOWN_EVENTS.has(event)) return null;
++    if (seen.has(event)) continue;
++    seen.add(event);
++    out.push(event);
++  }
++  return out.length > 0 ? out : null;
++}
++
++export async function listIntegrationWebhooks(): Promise<IntegrationWebhookRecord[]> {
++  const rows = await prisma.integrationWebhook.findMany({
++    orderBy: { createdAt: "desc" },
++    select: {
++      id: true,
++      url: true,
++      events: true,
++      isActive: true,
++      name: true,
++      createdAt: true,
++      updatedAt: true,
++    },
++  });
++  return rows.map(publicShape);
++}
++
++export async function getIntegrationWebhook(
++  id: string,
++): Promise<IntegrationWebhookRecord | null> {
++  const row = await prisma.integrationWebhook.findUnique({
++    where: { id },
++    select: {
++      id: true,
++      url: true,
++      events: true,
++      isActive: true,
++      name: true,
++      createdAt: true,
++      updatedAt: true,
++    },
++  });
++  return row ? publicShape(row) : null;
++}
++
++export async function createIntegrationWebhook(input: {
++  url: string;
++  events: string[];
++  name?: string | null;
++  organizationId: string;
++}): Promise<IntegrationWebhookRecord & { secret: string }> {
++  const secret = randomBytes(32).toString("hex");
++  const row = await prisma.integrationWebhook.create({
++    data: {
++      organizationId: input.organizationId,
++      url: input.url,
++      events: input.events,
++      name: input.name ?? null,
++      secret,
++      isActive: true,
++    },
++  });
++  return { ...publicShape(row), secret };
++}
++
++export async function deleteIntegrationWebhook(id: string): Promise<boolean> {
++  try {
++    await prisma.integrationWebhook.delete({ where: { id } });
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++export function assertWebhookUrl(url: string): string | null {
++  const trimmed = url.trim();
++  if (!trimmed) return "url é obrigatória.";
++  if (!isHttpsUrl(trimmed)) return "url deve ser http(s).";
++  if (trimmed.length > 2000) return "url é longa demais.";
++  return null;
++}
++
++type TriggerContext = {
++  contactId?: string;
++  dealId?: string;
++  data?: unknown;
++};
++
++function buildPayload(
++  event: string,
++  context: TriggerContext,
++  organizationId: string | null,
++): Record<string, unknown> {
++  return {
++    event,
++    occurredAt: new Date().toISOString(),
++    organizationId,
++    contactId: context.contactId ?? null,
++    dealId: context.dealId ?? null,
++    data:
++      context.data !== undefined && context.data !== null && typeof context.data === "object"
++        ? context.data
++        : {},
++  };
++}
++
++function signBody(secret: string, body: string): string {
++  return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
++}
++
++/**
++ * Dispara os webhooks da org que escutam `event` (ou `*`).
++ * Fire-and-forget: nunca lança para o caller.
++ */
++export async function dispatchIntegrationWebhooks(
++  event: string,
++  context: TriggerContext,
++): Promise<void> {
++  const organizationId = getOrgIdOrNull();
++  if (!organizationId) return;
++
++  let hooks: Array<{ id: string; url: string; secret: string | null }>;
++  try {
++    hooks = await prisma.integrationWebhook.findMany({
++      where: {
++        isActive: true,
++        OR: [{ events: { has: event } }, { events: { has: "*" } }],
++      },
++      select: { id: true, url: true, secret: true },
++    });
++  } catch (err) {
++    console.warn(
++      "[integration-webhooks] list failed:",
++      err instanceof Error ? err.message : err,
++    );
++    return;
++  }
++
++  if (hooks.length === 0) return;
++
++  const payload = buildPayload(event, context, organizationId);
++  const body = JSON.stringify(payload);
++
++  await Promise.allSettled(
++    hooks.map(async (hook) => {
++      const headers: Record<string, string> = {
++        "Content-Type": "application/json",
++        "X-Eduit-Event": event,
++      };
++      if (hook.secret) {
++        headers["X-Eduit-Signature"] = signBody(hook.secret, body);
++      }
++      const controller = new AbortController();
++      const timer = setTimeout(() => controller.abort(), DISPATCH_TIMEOUT_MS);
++      try {
++        const res = await fetch(hook.url, {
++          method: "POST",
++          headers,
++          body,
++          signal: controller.signal,
++        });
++        if (!res.ok) {
++          console.warn(
++            `[integration-webhooks] ${hook.id} ${event} → HTTP ${res.status}`,
++          );
++        }
++      } catch (err) {
++        console.warn(
++          `[integration-webhooks] ${hook.id} ${event} failed:`,
++          err instanceof Error ? err.message : err,
++        );
++      } finally {
++        clearTimeout(timer);
++      }
++    }),
++  );
++}
+-- 
+2.43.0
+
