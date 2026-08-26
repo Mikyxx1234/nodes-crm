@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-eduit-crm",
-  "version": "0.3.0",
-  "description": "Node privado do n8n para operar o Eduit CRM (contatos, deals, deal+contato e busca) via API com campos amigáveis.",
+  "version": "0.4.0",
+  "description": "Node privado do n8n para operar o Eduit CRM (contatos, deals, deal+contato, busca e trigger por eventos) via API com campos amigáveis.",
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -29,7 +29,8 @@
       "dist/credentials/EduitCrmApi.credentials.js"
     ],
     "nodes": [
-      "dist/nodes/EduitCrm/EduitCrm.node.js"
+      "dist/nodes/EduitCrm/EduitCrm.node.js",
+      "dist/nodes/EduitCrm/EduitCrmTrigger.node.js"
     ]
   },
   "devDependencies": {

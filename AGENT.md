@@ -4,6 +4,32 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-26 - Trigger n8n por eventos do CRM (troca de responsável)
+
+**Decisão**
+
+Novo node `EduitCrmTrigger` (`group: trigger`). Ao ativar o workflow, registra a URL do n8n em `POST /api/integration-webhooks` com os eventos escolhidos. O CRM POSTa `{ event, occurredAt, organizationId, contactId, dealId, data }` quando `fireTrigger` dispara.
+
+Evento padrão: `agent_changed` (troca de responsável do negócio). Também: `contact_owner_changed`, `lead_distributed`, `stage_changed`, `deal_created`, `deal_won`, `deal_lost`, `contact_created`, `tag_added`, `conversation_created`, `lifecycle_changed`, `message_received`, `message_sent`.
+
+O backend correspondente vai no patch `backend-integration-webhooks.patch` (tabela `integration_webhooks`, dispatch em `fireTrigger`, `agent_changed` em `assignDealOwner`). Este agente não tem push em `backend_crm1`.
+
+**Contexto**
+
+O CRM só tinha automações internas. Não havia inscrição de webhook de saída. `agent_changed` só saía do `PUT /api/deals/:id` — bulk, distribuição e automação usam `assignDealOwner` sem `fireTrigger`.
+
+**Alternativas descartadas**
+
+- **Polling** no n8n. Atraso e carga. Evento de troca de responsável some entre ciclos.
+- **Reusar `agent_changed` no contato.** Dispararia automações de deal. Evento novo `contact_owner_changed`.
+- **Trigger só de `agent_changed`.** Os outros eventos já passam por `fireTrigger`; o mesmo registro serve.
+
+**Impacto**
+
+Pacote 0.4.0. Sem o patch no CRM o trigger não ativa (404). Token precisa de `deal:view` + `deal:edit`.
+
+---
+
 ### 2026-08-25 - Deal > Update: Lost Reason do catálogo e marca como LOST
 
 **Decisão**

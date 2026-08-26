@@ -78,6 +78,19 @@ Testes manuais reais contra um ambiente do CRM. **Use primeiro um ambiente de DE
 - **Deal → Create** com `Stage Source = Manual` e `Stage ID = inexistente`.
 - **Esperado:** erro `400` (estágio/referência inválida).
 
+## 8. Trigger — troca de responsável
+
+Pré-requisito: `backend-integration-webhooks.patch` aplicado no CRM (senão a ativação falha com 404).
+
+- Crie um workflow com **Eduit CRM Trigger**. Deixe **Events** = `Troca de Responsável do Negócio` (`agent_changed`). Conecte um node Set/NoOp só para ver o JSON.
+- Ative o workflow.
+- **Esperado:** no CRM, `GET /api/integration-webhooks` lista uma URL do n8n com `events: ["agent_changed"]`.
+- No CRM, altere o responsável de um negócio (kanban ou edição).
+- **Esperado:** o workflow executa com payload `{ event: "agent_changed", dealId, contactId, data: { fromOwnerId, toOwnerId } }`.
+- Troca em massa / distribuição inteligente também deve disparar (depois do patch, `assignDealOwner` chama `fireTrigger`).
+- Desative o workflow.
+- **Esperado:** o webhook some da lista no CRM.
+
 ---
 
 ## Checklist de aceite
@@ -91,4 +104,5 @@ Testes manuais reais contra um ambiente do CRM. **Use primeiro um ambiente de DE
 - [ ] Teste 5 retorna 401.
 - [ ] Teste 6 retorna 403.
 - [ ] Teste 7 retorna 400.
+- [ ] Teste 8 (Trigger) dispara na troca de responsável e some ao desativar.
 - [ ] Search Full Record retorna todos os contatos + `mainContact`/`mainDeal`.

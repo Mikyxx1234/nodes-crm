@@ -1,9 +1,10 @@
 # n8n-nodes-eduit-crm
 
-Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem montar JSON manual). Consome a API existente do CRM via token Bearer. Não altera o backend nem o frontend do CRM.
+Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem montar JSON manual). Consome a API do CRM via token Bearer. Inclui um **Trigger** por eventos (troca de responsável, estágio, deal criado/ganho/perdido, …), que depende do patch `backend-integration-webhooks.patch` no CRM.
 
 ## Recursos e operações
 
+- **Eduit CRM Trigger** (novo) — inicia o workflow quando o CRM dispara um evento. Padrão: **troca de responsável do negócio** (`agent_changed`). Também: responsável do contato, lead distribuído, estágio, deal criado/ganho/perdido, contato criado, tag, conversa, ciclo de vida, mensagem recebida/enviada. **Requer** `backend-integration-webhooks.patch` aplicado e deployado em `caiovpinheiro/backend_crm1`.
 - **Deal + Contact**
   - `Create Deal With Contact` (prioridade) — acha o contato (ID → telefone → e-mail) ou cria, e cria o negócio já vinculado. Usa `POST /api/leads` (atômico e idempotente por telefone/e-mail).
   - `Create Deal For Existing Contact` — cria (ou reaproveita) um negócio para um contato **que já existe**. Localiza por ID → telefone → e-mail e **não cria contato** se não achar. Também usa `POST /api/leads`.
@@ -43,7 +44,8 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
 O usuário dono do token precisa das permissões:
 
 - `contact:create`, `contact:edit`
-- `deal:create`, `deal:edit`, `deal:change_stage` (e escopo do stage)
+- `deal:create`, `deal:edit`, `deal:view`, `deal:change_stage` (e escopo do stage)
+- Para o **Trigger**: `deal:view` (listar webhooks) e `deal:edit` (registrar/remover a URL do n8n)
 - Para o resource **Message**: escopo de envio (`channel.send`) no canal WhatsApp usado. Para listar flows, o dono do token precisa ser **ADMIN** ou **MANAGER** — sem isso só o dropdown de flows fica vazio, o resto do node funciona normalmente.
 
 Sem elas, a API retorna `403`.
@@ -113,8 +115,34 @@ docker run -it --rm -p 5678:5678 \
 3. Crie a credencial **Eduit CRM API** (`Base URL` + `API Token`) e clique em **Test** (deve passar — chama `GET /api/contacts?perPage=1`).
 4. Teste **Contact > Search** (busca simples).
 5. Teste **Deal + Contact > Create Deal With Contact** (cria contato + negócio).
+6. Procure também por **Eduit CRM Trigger** (ícone iguais). Sem o patch de webhooks no CRM, ativar um workflow com esse node falha.
 
 > Atualizou o node? Faça commit/push na branch `main` e rebuild do serviço no Easypanel — a imagem recompila o pacote do zero.
+
+## Trigger (eventos do CRM)
+
+O node **Eduit CRM Trigger** registra a URL do n8n em `POST /api/integration-webhooks` ao ativar o workflow. O CRM POSTa o evento em seguida.
+
+**Evento padrão:** `agent_changed` (troca de responsável do negócio). Cobre edição do deal, bulk, distribuição inteligente e passo de automação `assign_owner` — depois do patch, esses caminhos passam por `assignDealOwner` + `fireTrigger`.
+
+**Outros eventos úteis:** `contact_owner_changed`, `lead_distributed`, `stage_changed`, `deal_created`, `deal_won`, `deal_lost`, `contact_created`, `tag_added`, `conversation_created`, `lifecycle_changed`. `message_received` / `message_sent` existem mas são alto volume.
+
+Payload de exemplo (`agent_changed`):
+
+```json
+{
+  "event": "agent_changed",
+  "occurredAt": "2026-08-26T15:00:00.000Z",
+  "organizationId": "org_…",
+  "contactId": "c_…",
+  "dealId": "d_…",
+  "data": { "fromOwnerId": "u_…", "toOwnerId": "u_…" }
+}
+```
+
+Header opcional: `X-Eduit-Signature: sha256=…` (HMAC do body com o secret gerado no cadastro).
+
+Sem o patch no CRM, ativar o workflow falha (404 em `/api/integration-webhooks`).
 
 ## UX dos campos
 

@@ -1,15 +1,21 @@
 import type {
 	IDataObject,
 	IExecuteFunctions,
+	IHookFunctions,
 	IHttpRequestMethods,
 	IHttpRequestOptions,
 	ILoadOptionsFunctions,
 	INodePropertyOptions,
+	IWebhookFunctions,
 	JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
 
-type EduitContext = IExecuteFunctions | ILoadOptionsFunctions;
+type EduitContext =
+	| IExecuteFunctions
+	| ILoadOptionsFunctions
+	| IHookFunctions
+	| IWebhookFunctions;
 
 /**
  * Wrapper único para todas as chamadas à API do CRM. Usa o helper de
