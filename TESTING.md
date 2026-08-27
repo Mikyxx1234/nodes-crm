@@ -6,7 +6,7 @@ Testes manuais reais contra um ambiente do CRM. **Use primeiro um ambiente de DE
 
 1. `npm install && npm run build` no pacote.
 2. n8n rodando com o node carregado (ver README).
-3. Credencial `Eduit CRM API` configurada:
+3. Credencial `Bwipo CRM API` configurada:
    - `Base URL`: URL do backend do CRM.
    - `API Token`: token `eduit_...` de um usuário com permissões de contato/deal.
 4. Tenha à mão um `pipelineId`/`stageId` válidos (use o dropdown ou `GET /api/pipelines`).
@@ -82,7 +82,7 @@ Testes manuais reais contra um ambiente do CRM. **Use primeiro um ambiente de DE
 
 Pré-requisito: `backend-integration-webhooks.patch` aplicado no CRM (senão a ativação falha com 404).
 
-- Crie um workflow com **Eduit CRM Trigger**. Deixe **Events** = `Troca de Responsável do Negócio` (`agent_changed`). Conecte um node Set/NoOp só para ver o JSON.
+- Crie um workflow com **Bwipo CRM Trigger**. Deixe **Events** = `Troca de Responsável do Negócio` (`agent_changed`). Conecte um node Set/NoOp só para ver o JSON.
 - Ative o workflow.
 - **Esperado:** no CRM, `GET /api/integration-webhooks` lista uma URL do n8n com `events: ["agent_changed"]`.
 - No CRM, altere o responsável de um negócio (kanban ou edição).
@@ -90,6 +90,17 @@ Pré-requisito: `backend-integration-webhooks.patch` aplicado no CRM (senão a a
 - Troca em massa / distribuição inteligente também deve disparar (depois do patch, `assignDealOwner` chama `fireTrigger`).
 - Desative o workflow.
 - **Esperado:** o webhook some da lista no CRM.
+
+## 9. Timeline — pegar evento do deal (action)
+
+Pré-requisito: `backend-deal-timeline-bearer.patch` aplicado no CRM (senão a chamada falha com 401).
+
+- Monte um fluxo: **Bwipo CRM Trigger** (qualquer evento que traga `dealId`) → **Bwipo CRM** Resource **Timeline** → **Get Events**.
+- `Deal ID` = `{{$json.dealId}}`. `Event Type` = `Responsável alterado` (`OWNER_CHANGED`). `Return All Matching` desligado.
+- Dispare uma troca de responsável no CRM.
+- **Esperado:** o action devolve um item com `found: true`, `type: "OWNER_CHANGED"`, `meta` (from/to), `user` e `createdAt`.
+- Repita com um tipo que o deal **não** tem. **Esperado:** `found: false` e `totalMatched: 0` (não quebra o workflow).
+- `Return All Matching` ligado + `Event Type` = `Todos os eventos`. **Esperado:** um item n8n por cartão da timeline (máx. 200).
 
 ---
 
@@ -105,4 +116,5 @@ Pré-requisito: `backend-integration-webhooks.patch` aplicado no CRM (senão a a
 - [ ] Teste 6 retorna 403.
 - [ ] Teste 7 retorna 400.
 - [ ] Teste 8 (Trigger) dispara na troca de responsável e some ao desativar.
+- [ ] Teste 9 (Timeline) devolve o evento do deal a partir do `dealId` do Trigger.
 - [ ] Search Full Record retorna todos os contatos + `mainContact`/`mainDeal`.

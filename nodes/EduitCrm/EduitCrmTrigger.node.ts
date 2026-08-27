@@ -108,15 +108,15 @@ function selectedEvents(ctx: IHookFunctions): string[] {
  */
 export class EduitCrmTrigger implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Eduit CRM Trigger',
+		displayName: 'Bwipo CRM Trigger',
 		name: 'eduitCrmTrigger',
-		icon: 'file:eduitCrm.svg',
+		icon: 'file:bwipoCrm.png',
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{$parameter["listenAll"] ? "Todos os eventos" : $parameter["events"]}}',
 		description:
-			'Dispara o workflow quando um evento acontece no Eduit CRM (troca de responsável, estágio, deal criado/ganho/perdido, …)',
-		defaults: { name: 'Eduit CRM Trigger' },
+			'Dispara o workflow quando um evento acontece no Bwipo CRM (troca de responsável, estágio, deal criado/ganho/perdido, …)',
+		defaults: { name: 'Bwipo CRM Trigger' },
 		inputs: [],
 		outputs: ['main'],
 		credentials: [{ name: 'eduitCrmApi', required: true }],

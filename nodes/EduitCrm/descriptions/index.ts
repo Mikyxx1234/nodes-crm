@@ -6,3 +6,4 @@ export * from './LossReasonDescription';
 export * from './MessageDescription';
 export * from './NoteDescription';
 export * from './SearchDescription';
+export * from './TimelineDescription';

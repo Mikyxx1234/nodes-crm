@@ -8,7 +8,7 @@ import type {
 export class EduitCrmApi implements ICredentialType {
 	name = 'eduitCrmApi';
 
-	displayName = 'Eduit CRM API';
+	displayName = 'Bwipo CRM API';
 
 	documentationUrl = 'https://github.com/Mikyxx1234';
 

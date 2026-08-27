@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 27 Aug 2026 16:40:00 +0000
+Subject: [PATCH] feat(api): Bearer em GET /api/deals/:id/timeline
+
+A timeline do negócio passa a aceitar token Bearer (além da sessão)
+para o n8n ler os mesmos eventos do painel do deal.
+---
+ AGENT.md                                 | 16 ++++++++++++++++
+ src/app/api/deals/[id]/timeline/route.ts | 14 ++++++++++----
+ 2 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/AGENT.md b/AGENT.md
+--- a/AGENT.md
++++ b/AGENT.md
+@@ -7,6 +7,22 @@ documenta **por que** algo foi feito, não **o que**.
+ ---
+ 
++### 2026-08-27 — Bearer em GET /api/deals/:id/timeline
++
++**Decisão.** `GET /api/deals/:id/timeline` passa a aceitar Bearer
++(`authenticateApiRequest` + `runWithApiUserContext`), além da sessão.
++Exige `deal:view`. O n8n lê a mesma timeline do painel do negócio.
++
++**Contexto.** A rota só tinha `withOrgContext` (sessão NextAuth). O node
++de action Timeline > Get Events precisa do token de API.
++
++**Alternativas descartadas.** Endpoint novo só para n8n (duplicaria o
++contrato `{ id, type, meta, createdAt, user }`). Polling de webhooks.
++
++**Impacto.** 1 rota. Sessão do CRM inalterada (`authenticateApiRequest`
++faz fallback para `auth()`).
++
++---
++
+ ### 2026-08-27 — Reset de senha pelo admin destrava o login
+ 
+ **Decisão.** (1) `PATCH /api/users/[id]` com `password` chama `clearLoginLockout(email)` — apaga as falhas das janelas soft (15min) e hard (24h) em `login_attempts`. (2) Outcome `locked` deixou de contar como falha nos thresholds do lockout.
+diff --git a/src/app/api/deals/[id]/timeline/route.ts b/src/app/api/deals/[id]/timeline/route.ts
+--- a/src/app/api/deals/[id]/timeline/route.ts
++++ b/src/app/api/deals/[id]/timeline/route.ts
+@@ -1,7 +1,8 @@
+ import { NextResponse } from "next/server";
+ 
+-import { withOrgContext } from "@/lib/auth-helpers";
++import { authenticateApiRequest, runWithApiUserContext } from "@/lib/api-auth";
++import { requirePermissionForUser } from "@/lib/authz/resource-policy";
+ import { prisma } from "@/lib/prisma";
+ import { getDealById } from "@/services/deals";
+ 
+ type Ctx = { params: Promise<{ id: string }> };
+@@ -20,8 +21,13 @@ function needsName(ref: { id?: string; name?: string } | undefined): boolean {
+   return Boolean(ref?.id && (!ref.name || CUID_RE.test(ref.name)));
+ }
+ 
+-export async function GET(_req: Request, ctx: Ctx) {
+-  return withOrgContext(async () => {
++export async function GET(request: Request, ctx: Ctx) {
++  const authResult = await authenticateApiRequest(request);
++  if (!authResult.ok) return authResult.response;
++
++  return await runWithApiUserContext(authResult.user, async () => {
++    const denied = await requirePermissionForUser(authResult.user, "deal:view");
++    if (denied) return denied;
+   try {
+     const { id } = await ctx.params;
+     const existing = await getDealById(id);

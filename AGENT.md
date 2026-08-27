@@ -4,6 +4,49 @@ Este arquivo registra decisões estruturais tomadas ao longo do desenvolvimento 
 
 ---
 
+### 2026-08-27 - Timeline do deal como action (não Trigger)
+
+**Decisão**
+
+Novo resource `Timeline` no node de action (`Bwipo CRM`), operation `Get Events`. Recebe `Deal ID` + tipo de evento (os mesmos cartões da timeline do painel: responsável, mensagem, automação, status, estágio, …) e lê `GET /api/deals/:id/timeline`. Padrão: só o evento mais recente daquele tipo. Trigger permanece para iniciar o workflow.
+
+O backend correspondente vai no patch `backend-deal-timeline-bearer.patch` (a rota hoje só aceita sessão). Este agente não tem push em `backend_crm1`.
+
+**Contexto**
+
+O Trigger entrega `dealId` quando o CRM dispara. O operador precisa, no meio do fluxo, puxar o cartão da timeline daquele negócio (autor, detalhe, horário) — não ouvir o webhook de novo.
+
+**Alternativas descartadas**
+
+- Transformar o Trigger em action. Evento ao vivo continua precisando de webhook.
+- Endpoint novo de “get event by type”. A timeline já devolve `{ id, type, meta, createdAt, user }` e o filtro cabe no node (máx. 200).
+
+**Impacto**
+
+Pacote 0.5.0. Sem o patch no CRM a operation falha com 401. Token precisa de `deal:view`.
+
+---
+
+### 2026-08-27 - Rebrand visível: Eduit CRM → Bwipo CRM
+
+**Decisão**
+
+Só o que o operador vê no n8n muda: `displayName` dos nodes e da credencial passam a **Bwipo CRM** / **Bwipo CRM Trigger** / **Bwipo CRM API**. Ícone novo `bwipoCrm.png` (logo b em degradê). `name` interno (`eduitCrm`, `eduitCrmTrigger`, `eduitCrmApi`) e caminhos de arquivo ficam iguais para não quebrar workflows já salvos.
+
+**Contexto**
+
+Pedido de rebrand da marca no picker do n8n. Token continua no formato `eduit_...` (backend). Header `X-Eduit-Signature` também é contrato do CRM.
+
+**Alternativas descartadas**
+
+- Renomear classes/`name` dos nodes. Breaking change: todo workflow existente perderia o tipo.
+
+**Impacto**
+
+Pacote 0.4.1. Rebuild da imagem para o ícone e o nome aparecerem.
+
+---
+
 ### 2026-08-26 - Trigger n8n por eventos do CRM (troca de responsável)
 
 **Decisão**

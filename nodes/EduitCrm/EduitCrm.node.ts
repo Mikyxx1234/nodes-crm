@@ -47,18 +47,20 @@ import {
 	noteOperations,
 	searchFields,
 	searchOperations,
+	timelineFields,
+	timelineOperations,
 } from './descriptions';
 
 export class EduitCrm implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Eduit CRM',
+		displayName: 'Bwipo CRM',
 		name: 'eduitCrm',
-		icon: 'file:eduitCrm.svg',
+		icon: 'file:bwipoCrm.png',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Opera o Eduit CRM (contatos, negócios, mensagens, notas, busca e motivos de perda)',
-		defaults: { name: 'Eduit CRM' },
+		description: 'Opera o Bwipo CRM (contatos, negócios, mensagens, notas, timeline, busca e motivos de perda)',
+		defaults: { name: 'Bwipo CRM' },
 		inputs: ['main'],
 		outputs: ['main'],
 		credentials: [{ name: 'eduitCrmApi', required: true }],
@@ -72,6 +74,7 @@ export class EduitCrm implements INodeType {
 					{ name: 'Deal + Contact', value: 'dealContact' },
 					{ name: 'Contact', value: 'contact' },
 					{ name: 'Deal', value: 'deal' },
+					{ name: 'Timeline', value: 'timeline' },
 					{ name: 'Loss Reason', value: 'lossReason' },
 					{ name: 'Message', value: 'message' },
 					{ name: 'Note', value: 'note' },
@@ -85,6 +88,8 @@ export class EduitCrm implements INodeType {
 			...contactFields,
 			...dealOperations,
 			...dealFields,
+			...timelineOperations,
+			...timelineFields,
 			...lossReasonOperations,
 			...lossReasonFields,
 			...messageOperations,
@@ -159,6 +164,8 @@ export class EduitCrm implements INodeType {
 					result = await handleContact.call(this, operation, i);
 				} else if (resource === 'deal') {
 					result = await handleDeal.call(this, operation, i);
+				} else if (resource === 'timeline') {
+					result = await handleTimeline.call(this, operation, i);
 				} else if (resource === 'lossReason') {
 					result = await handleLossReason.call(this, operation, i);
 				} else if (resource === 'dealContact') {
@@ -955,6 +962,53 @@ async function handleNote(
 		`/api/deals/${encodeURIComponent(dealId)}/notes`,
 		{ content },
 	)) as IDataObject;
+}
+
+async function handleTimeline(
+	this: IExecuteFunctions,
+	operation: string,
+	i: number,
+): Promise<IDataObject | IDataObject[]> {
+	if (operation !== 'get') {
+		throw new NodeOperationError(this.getNode(), `Operação de timeline não suportada: ${operation}`);
+	}
+
+	const dealId = (this.getNodeParameter('dealId', i) as string).trim();
+	if (!dealId) {
+		throw new NodeOperationError(this.getNode(), 'Deal ID é obrigatório.', { itemIndex: i });
+	}
+	const eventType = this.getNodeParameter('eventType', i) as string;
+	const returnAll = this.getNodeParameter('returnAll', i, false) as boolean;
+
+	const raw = await eduitApiRequest.call(
+		this,
+		'GET',
+		`/api/deals/${encodeURIComponent(dealId)}/timeline`,
+	);
+	const events = Array.isArray(raw) ? (raw as IDataObject[]) : [];
+	const matched =
+		eventType === '*'
+			? events
+			: events.filter((ev) => String(ev.type ?? '') === eventType);
+
+	if (matched.length === 0) {
+		return {
+			found: false,
+			dealId,
+			eventType,
+			totalMatched: 0,
+			message: 'Nenhum evento deste tipo na timeline do negócio.',
+		};
+	}
+
+	const withFlags = matched.map((ev) => ({
+		...ev,
+		found: true,
+		dealId,
+	}));
+
+	if (returnAll) return withFlags;
+	return { ...withFlags[0], totalMatched: matched.length };
 }
 
 async function handleSearch(

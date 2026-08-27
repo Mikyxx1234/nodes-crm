@@ -1,10 +1,12 @@
 # n8n-nodes-eduit-crm
 
-Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem montar JSON manual). Consome a API do CRM via token Bearer. Inclui um **Trigger** por eventos (troca de responsável, estágio, deal criado/ganho/perdido, …), que depende do patch `backend-integration-webhooks.patch` no CRM.
+Node privado do n8n para operar o **Bwipo CRM** com campos amigáveis (sem montar JSON manual). Consome a API do CRM via token Bearer. Inclui um **Trigger** por eventos (troca de responsável, estágio, deal criado/ganho/perdido, …), que depende do patch `backend-integration-webhooks.patch` no CRM.
 
 ## Recursos e operações
 
-- **Eduit CRM Trigger** (novo) — inicia o workflow quando o CRM dispara um evento. Padrão: **troca de responsável do negócio** (`agent_changed`). Também: responsável do contato, lead distribuído, estágio, deal criado/ganho/perdido, contato criado, tag, conversa, ciclo de vida, mensagem recebida/enviada. **Requer** `backend-integration-webhooks.patch` aplicado e deployado em `caiovpinheiro/backend_crm1`.
+- **Bwipo CRM Trigger** (novo) — inicia o workflow quando o CRM dispara um evento. Padrão: **troca de responsável do negócio** (`agent_changed`). Também: responsável do contato, lead distribuído, estágio, deal criado/ganho/perdido, contato criado, tag, conversa, ciclo de vida, mensagem recebida/enviada. **Requer** `backend-integration-webhooks.patch` aplicado e deployado em `caiovpinheiro/backend_crm1`.
+- **Timeline**
+  - `Get Events` — lê a timeline do negócio (a mesma do painel do deal) via `GET /api/deals/:id/timeline` e filtra pelo tipo (responsável alterado, mensagem recebida, automação, status, estágio, …). Padrão: só o evento mais recente daquele tipo. Use o `Deal ID` que veio do Trigger. **Requer** `backend-deal-timeline-bearer.patch` no CRM.
 - **Deal + Contact**
   - `Create Deal With Contact` (prioridade) — acha o contato (ID → telefone → e-mail) ou cria, e cria o negócio já vinculado. Usa `POST /api/leads` (atômico e idempotente por telefone/e-mail).
   - `Create Deal For Existing Contact` — cria (ou reaproveita) um negócio para um contato **que já existe**. Localiza por ID → telefone → e-mail e **não cria contato** se não achar. Também usa `POST /api/leads`.
@@ -28,7 +30,7 @@ Node privado do n8n para operar o **Eduit CRM** com campos amigáveis (sem monta
 - **Search**
   - `Search Full Record` — busca contatos e os negócios de cada um; retorna todos os resultados + `mainContact`/`mainDeal`. Aceita `Search By`: General Term, Email, Phone ou **Ad Source ID (Meta CTWA)**.
 
-## Credencial: `Eduit CRM API`
+## Credencial: `Bwipo CRM API`
 
 | Campo       | Descrição                                                        |
 | ----------- | ---------------------------------------------------------------- |
@@ -111,17 +113,17 @@ docker run -it --rm -p 5678:5678 \
 #### Validação pós-deploy
 
 1. Abra o n8n.
-2. Em um workflow, adicione um node e procure por **Eduit CRM**.
-3. Crie a credencial **Eduit CRM API** (`Base URL` + `API Token`) e clique em **Test** (deve passar — chama `GET /api/contacts?perPage=1`).
+2. Em um workflow, adicione um node e procure por **Bwipo CRM**.
+3. Crie a credencial **Bwipo CRM API** (`Base URL` + `API Token`) e clique em **Test** (deve passar — chama `GET /api/contacts?perPage=1`).
 4. Teste **Contact > Search** (busca simples).
 5. Teste **Deal + Contact > Create Deal With Contact** (cria contato + negócio).
-6. Procure também por **Eduit CRM Trigger** (ícone iguais). Sem o patch de webhooks no CRM, ativar um workflow com esse node falha.
+6. Procure também por **Bwipo CRM Trigger** (ícone iguais). Sem o patch de webhooks no CRM, ativar um workflow com esse node falha.
 
 > Atualizou o node? Faça commit/push na branch `main` e rebuild do serviço no Easypanel — a imagem recompila o pacote do zero.
 
 ## Trigger (eventos do CRM)
 
-O node **Eduit CRM Trigger** registra a URL do n8n em `POST /api/integration-webhooks` ao ativar o workflow. O CRM POSTa o evento em seguida.
+O node **Bwipo CRM Trigger** registra a URL do n8n em `POST /api/integration-webhooks` ao ativar o workflow. O CRM POSTa o evento em seguida.
 
 **Evento padrão:** `agent_changed` (troca de responsável do negócio). Cobre edição do deal, bulk, distribuição inteligente e passo de automação `assign_owner` — depois do patch, esses caminhos passam por `assignDealOwner` + `fireTrigger`.
 
@@ -143,6 +145,16 @@ Payload de exemplo (`agent_changed`):
 Header opcional: `X-Eduit-Signature: sha256=…` (HMAC do body com o secret gerado no cadastro).
 
 Sem o patch no CRM, ativar o workflow falha (404 em `/api/integration-webhooks`).
+
+## Timeline (action)
+
+Depois que o Trigger (ou outro passo) já tem o `Deal ID`, o resource **Timeline > Get Events** lê a mesma timeline do painel do negócio e filtra pelo tipo (responsável alterado, mensagem recebida, automação, status, estágio, …).
+
+Fluxo típico: Trigger → **Bwipo CRM** (`Timeline` / `Get Events`) com `Deal ID` = `{{$json.dealId}}`.
+
+Padrão: só o evento **mais recente** daquele tipo (`found`, `type`, `meta`, `user`, `createdAt`). Marque **Return All Matching** para um item n8n por ocorrência.
+
+**Requer** `backend-deal-timeline-bearer.patch` aplicado no CRM. Sem isso a chamada falha com 401 (a rota só aceitava sessão).
 
 ## UX dos campos
 
