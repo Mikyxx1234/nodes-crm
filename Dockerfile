@@ -9,6 +9,8 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+# Falha o build se o ícone novo não entrou no contexto (evita imagem com PNG antigo em cache).
+RUN test -f nodes/EduitCrm/bwipo-icon-v2.png
 RUN npm run build
 RUN npm pack
 

@@ -110,7 +110,7 @@ export class EduitCrmTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Bwipo CRM Trigger',
 		name: 'eduitCrmTrigger',
-		icon: 'file:bwipoCrm.png',
+		icon: 'file:bwipo-icon-v2.png',
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{$parameter["listenAll"] ? "Todos os eventos" : $parameter["events"]}}',

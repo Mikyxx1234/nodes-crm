@@ -55,7 +55,7 @@ export class EduitCrm implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Bwipo CRM',
 		name: 'eduitCrm',
-		icon: 'file:bwipoCrm.png',
+		icon: 'file:bwipo-icon-v2.png',
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
